@@ -1,0 +1,28 @@
+{
+  "name": "@wisent-ai/competitors-cli",
+  "version": "0.1.0",
+  "description": "Evidence-first competitor discovery, comparison, and market research CLI",
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wisent-ai/competitors-cli.git"
+  },
+  "bin": {
+    "competitors": "./src/cli.js"
+  },
+  "exports": {
+    ".": "./src/index.js",
+    "./context": "./src/context/index.js",
+    "./discovery": "./src/discovery/index.js",
+    "./crawl": "./src/crawl.js",
+    "./comparison": "./src/comparison.js"
+  },
+  "files": [
+    "src",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  }
+}

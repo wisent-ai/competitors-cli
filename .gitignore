@@ -1,0 +1,7 @@
+node_modules/
+.env
+*.log
+.work/
+artifacts/
+reports/private/
+.DS_Store
