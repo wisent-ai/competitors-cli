@@ -12,8 +12,14 @@
     "competitors": "./src/cli.js"
   },
   "exports": {
-    ".": "./src/index.js",
-    "./context": "./src/context/index.js",
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./context": {
+      "types": "./src/context/index.d.ts",
+      "default": "./src/context/index.js"
+    },
     "./discovery": "./src/discovery/index.js",
     "./crawl": "./src/crawl.js",
     "./comparison": "./src/comparison.js"
