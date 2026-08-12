@@ -1,9 +1,17 @@
-import { hashString } from '../client.js';
 import { DEFAULT_COMPETITORS } from './seed.js';
 export { DEFAULT_COMPETITORS };
 
 // Competitor domain model: enums, shared shapers, and normalization + registry.
 // No arbitrary numeric caps, no invented numeric defaults: callers own bounds.
+function hashString(value) {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = ((hash << 5) - hash) + value.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
 
 export const COMPETITOR_EVENTS = {
   OBSERVATION_RECORDED: 'competitor_observation_recorded',
