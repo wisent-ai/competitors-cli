@@ -27,3 +27,10 @@ export function analyzeSourceComparison(input: {
   chat: (...args: unknown[]) => Promise<unknown>
   options?: Record<string, unknown>
 }): Promise<Record<string, unknown>>
+export function generateCompetitorRoadmap(input: {
+  product?: Competitor
+  sourceComparisons?: Array<Record<string, unknown>>
+  observations?: Array<Record<string, unknown>>
+  chat: (...args: unknown[]) => Promise<unknown>
+  options?: Record<string, unknown>
+}): Promise<Record<string, unknown>>
