@@ -8,3 +8,22 @@ export function contextToObservations(result: Record<string, unknown>, options?:
 export function deepAnalysisToObservations(result: Record<string, unknown>, options?: Record<string, unknown>): Array<Record<string, unknown>>
 export function createBramaChat(options?: Record<string, unknown>): (...args: unknown[]) => Promise<unknown>
 export function createProbierzScraper(options?: Record<string, unknown>): (...args: unknown[]) => Promise<unknown>
+export interface SourceFileEvidence {
+  path: string
+  content: string
+  url?: string
+}
+export interface SourceRepositoryEvidence {
+  repository?: string
+  revision?: string
+  files: SourceFileEvidence[]
+}
+export function buildSourceEvidenceCatalog(source?: SourceRepositoryEvidence, options?: Record<string, unknown>): Record<string, unknown>
+export function analyzeSourceComparison(input: {
+  product?: Competitor
+  competitor?: Competitor
+  productSource?: SourceRepositoryEvidence
+  competitorSource?: SourceRepositoryEvidence
+  chat: (...args: unknown[]) => Promise<unknown>
+  options?: Record<string, unknown>
+}): Promise<Record<string, unknown>>

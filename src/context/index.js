@@ -3,6 +3,7 @@ export * from './brama.js';
 export * from './probierz.js';
 export * from './research.js';
 export * from './analysis.js';
+export * from './source.js';
 
 import { COMPETITOR_SIGNAL_TYPES, COMPETITOR_SOURCE_TYPES, cleanNullable, cleanObject, cleanStringArray } from '../competition/model.js';
 import { normalizeCompetitorObservation } from '../competition/observations.js';
