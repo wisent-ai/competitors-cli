@@ -66,6 +66,7 @@ export async function generateCompetitorRoadmap({ product, sourceComparisons = [
   const entries = evidenceCatalog(sourceComparisons, observations);
   if (!entries.length) return { status: 'no_evidence', items: [], evidence: [], errors: [] };
   const validIds = new Set(entries.map((entry) => entry.id));
+  const entryById = new Map(entries.map((entry) => [entry.id, entry]));
   const messages = [
     {
       role: 'system',
@@ -106,6 +107,17 @@ export async function generateCompetitorRoadmap({ product, sourceComparisons = [
     };
     if (disposition === 'roadmap' && (!item.proposedChange || !item.acceptanceCriteria.length)) {
       errors.push({ stage: 'validation', title, error: 'roadmap item missing proposed change or acceptance criteria' });
+      item.disposition = 'no_action';
+      item.priority = 'low';
+      item.proposedChange = '';
+      item.codeAreas = [];
+      item.acceptanceCriteria = [];
+    }
+    const cited = evidenceIds.map((id) => entryById.get(id)).filter(Boolean);
+    const sourceOnly = cited.every((entry) => entry.type === 'source_comparison');
+    const supportsGap = cited.some((entry) => entry.assessment === 'theirs_better' || entry.assessment === 'different');
+    if (item.disposition === 'roadmap' && sourceOnly && !supportsGap) {
+      errors.push({ stage: 'validation', title, error: 'source evidence does not identify a competitor advantage or relevant difference' });
       item.disposition = 'no_action';
       item.priority = 'low';
       item.proposedChange = '';
