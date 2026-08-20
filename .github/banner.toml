@@ -1,11 +1,13 @@
 [automation]
 managed = true
-source_fingerprint = "5fa8019564e51531"
+source_fingerprint = "357b9fce1287639b"
 category = "developer"
+copy_status = "missing"
+approved_in = ""
 
 [banner]
-title = "Competitors CLI builds. You ship faster."
-description = "Evidence-first competitor discovery, comparison, and market research CLI"
+title = "Competitors CLI"
+description = ""
 product = "Wisent"
 url = "wisent.com"
 theme = "dark"
