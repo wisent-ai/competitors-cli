@@ -1,7 +1,7 @@
 [automation]
 managed = true
-source_fingerprint = "357b9fce1287639b"
-category = "developer"
+source_fingerprint = "52fe3db26d5cc493"
+category = "agent"
 copy_status = "missing"
 approved_in = ""
 
@@ -11,7 +11,7 @@ description = ""
 product = "Wisent"
 url = "wisent.com"
 theme = "dark"
-layout = "signal-left"
+layout = "orbit-left"
 art_seed = "competitors-cli"
 width = 1584
 height = 396
