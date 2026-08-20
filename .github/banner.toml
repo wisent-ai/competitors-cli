@@ -1,0 +1,15 @@
+[automation]
+managed = true
+source_fingerprint = "5fa8019564e51531"
+category = "developer"
+
+[banner]
+title = "Competitors CLI builds. You ship faster."
+description = "Evidence-first competitor discovery, comparison, and market research CLI"
+product = "Wisent"
+url = "wisent.com"
+theme = "dark"
+layout = "signal-left"
+art_seed = "competitors-cli"
+width = 1584
+height = 396
