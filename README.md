@@ -111,6 +111,16 @@ const results = await gatherCompetitorDeepAnalysis(competitors, {
 
 Every retained deep-analysis finding cites an evidence ID from the host-built catalog. Missing surfaces, omitted payloads, invalid model output, and collection failures remain explicit in the result.
 
+The public exports stay at `src/context/index.js`. Internally, `adapters/`
+owns transport adapters, `research/` separates verified surfaces from page
+selection, `analysis/` separates evidence construction from model analysis,
+and `gathering/` owns capture orchestration. Observation conversion stays
+separate from those collection steps.
+
+Run `npm test` for the real local discovery command, its missing-input refusal,
+and the public capture catalog's Unicode, identity, and omission boundaries.
+These tests do not replace or claim a live model, search, or browser run.
+
 ## Operational model
 
 - **Input:** explicit JSON records or injected search, capture, and model functions.
