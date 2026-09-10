@@ -12,7 +12,7 @@ import {
   stableHash,
   tally,
 } from '../competition/model.js';
-import { createCompetitorModel } from '../competition-crawl.js';
+import { createCompetitorModel } from '../crawl.js';
 import {
   candidateSeed,
   canonicalCandidateKey,
