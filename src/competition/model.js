@@ -3,10 +3,12 @@ export { DEFAULT_COMPETITORS };
 
 // Competitor domain model: enums, shared shapers, and normalization + registry.
 // No arbitrary numeric caps, no invented numeric defaults: callers own bounds.
+// The classic 31-multiplier string hash: shifting by five and subtracting once multiplies by 31.
+const HASH_SHIFT = 5;
 function hashString(value) {
   let hash = 0;
   for (let i = 0; i < value.length; i += 1) {
-    hash = ((hash << 5) - hash) + value.charCodeAt(i);
+    hash = ((hash << HASH_SHIFT) - hash) + value.charCodeAt(i);
     hash |= 0;
   }
   return Math.abs(hash);
