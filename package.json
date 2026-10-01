@@ -2,9 +2,6 @@
   "name": "@wisent-ai/competitors-cli",
   "version": "0.1.0",
   "description": "Evidence-first competitor discovery, comparison, and market research CLI",
-  "scripts": {
-    "test": "node --test"
-  },
   "type": "module",
   "license": "Apache-2.0",
   "repository": {
