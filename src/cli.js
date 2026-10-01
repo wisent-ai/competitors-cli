@@ -13,16 +13,30 @@ function usage() {
   return `competitors-cli
 
 Usage:
-  competitors registry
-  competitors discover --records <records.json> [--own-domain <domain>]
+  competitors registry [--text]
+  competitors discover --records <records.json> [--own-domain <domain>] [--text]
   competitors compare --product <product.json> --competitors <competitors.json> [--format json|markdown]
 
-All commands write their result to stdout. Network and model I/O remain injected library boundaries.`
+All commands write their result to stdout: registry and discover as JSON, or with --text as one
+path: value line per field. Network and model I/O remain injected library boundaries.`
 }
 
 function value(args, name) {
   const index = args.indexOf(name)
   return index >= 0 ? args[index + 1] : null
+}
+
+// The same result for people: one `path: value` line per field (cli.md rule 13).
+function render(result, text) {
+  if (!text) return JSON.stringify(result, null, 2)
+  const lines = []
+  const walk = (node, path) => {
+    if (Array.isArray(node) && node.length) node.forEach((item, index) => walk(item, `${path}[${index}]`))
+    else if (node && typeof node === 'object' && Object.keys(node).length) for (const [key, item] of Object.entries(node)) walk(item, path ? `${path}.${key}` : key)
+    else lines.push(path ? `${path}: ${node === null || typeof node === 'object' ? '-' : node}` : String(node))
+  }
+  walk(result, '')
+  return lines.join('\n')
 }
 
 async function jsonFile(path, label) {
@@ -38,7 +52,7 @@ async function main() {
     return
   }
   if (command === 'registry') {
-    console.log(JSON.stringify({ competitors: DEFAULT_COMPETITORS }, null, 2))
+    console.log(render({ competitors: DEFAULT_COMPETITORS }, args.includes('--text')))
     return
   }
   if (command === 'discover') {
@@ -47,7 +61,7 @@ async function main() {
     if (!Array.isArray(records)) throw new Error('Records input must be an array or {"records": []}')
     const ownDomains = args.flatMap((arg, index) => arg === '--own-domain' && args[index + 1] ? [args[index + 1]] : [])
     const candidates = discoverCompetitorCandidates(records, { ownDomains })
-    console.log(JSON.stringify({ summary: summarizeDiscoveryCandidates(candidates), candidates }, null, 2))
+    console.log(render({ summary: summarizeDiscoveryCandidates(candidates), candidates }, args.includes('--text')))
     return
   }
   if (command === 'compare') {
