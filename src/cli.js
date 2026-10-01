@@ -5,6 +5,10 @@ import { DEFAULT_COMPETITORS } from './competition/seed.js'
 import { compareProducts, comparisonMarkdown } from './comparison.js'
 import { discoverCompetitorCandidates, summarizeDiscoveryCandidates } from './discovery/index.js'
 
+// The invocation itself is wrong: exit 2 with the usage; any other failure
+// exits 1 with its own message (cli.md rule 10).
+class UsageError extends Error {}
+
 function usage() {
   return `competitors-cli
 
@@ -22,14 +26,14 @@ function value(args, name) {
 }
 
 async function jsonFile(path, label) {
-  if (!path) throw new Error(`${label} is required`)
+  if (!path) throw new UsageError(`${label} is required\n\n${usage()}`)
   return JSON.parse(await readFile(path, 'utf8'))
 }
 
 async function main() {
   const args = process.argv.slice(2)
   const command = args[0]
-  if (!command || command === '--help' || command === '-h') {
+  if (!command || args.includes('--help') || args.includes('-h')) {
     console.log(usage())
     return
   }
@@ -55,13 +59,13 @@ async function main() {
     const format = value(args, '--format') || 'markdown'
     if (format === 'json') console.log(JSON.stringify(comparison, null, 2))
     else if (format === 'markdown') console.log(comparisonMarkdown(comparison))
-    else throw new Error('--format must be json or markdown')
+    else throw new UsageError('--format must be json or markdown')
     return
   }
-  throw new Error(`Unknown command: ${command}\n\n${usage()}`)
+  throw new UsageError(`Unknown command: ${command}\n\n${usage()}`)
 }
 
 main().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error))
-  process.exitCode = 1
+  process.exitCode = error instanceof UsageError ? 2 : 1
 })
