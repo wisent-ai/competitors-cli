@@ -14,9 +14,10 @@ import { isAbsolute, resolve } from 'node:path';
 //
 // When the operator injects an extractStructuredModule, each capture also
 // records the structured page evidence that module extracts (page metadata,
-// DOM outline, journey hints — whatever object the extractor returns), bounded
-// by a caller-supplied maxStructuredBytes. Without that module, structured
-// capture is skipped entirely and the capture shape is unchanged.
+// DOM outline, journey hints — whatever object the extractor returns). A
+// caller may bound it with maxStructuredBytes; without a bound it is kept
+// whole. Without that module, structured capture is skipped entirely and the
+// capture shape is unchanged.
 
 const TARGET_FOR_KIND = {
   website: 'web',
@@ -118,18 +119,18 @@ export function createProbierzScraper(options = {}) {
   const extractStructured = resolveExtractStructured(options.extractStructuredModule, options);
   const runOptions = options.runOptions ? options.runOptions : {};
   const inlineImages = options.inlineImages === true;
-  const screenshotLimit = Number(options.screenshotLimit);
-  const maxImageBytes = Number(options.maxImageBytes);
-  const maxStructuredBytes = Number(options.maxStructuredBytes);
-  if (inlineImages && (!Number.isInteger(screenshotLimit) || screenshotLimit < Number.EPSILON)) {
-    throw new Error('createProbierzScraper requires a positive integer screenshotLimit when inlineImages is enabled');
-  }
-  if (inlineImages && (!Number.isFinite(maxImageBytes) || maxImageBytes < Number.EPSILON)) {
-    throw new Error('createProbierzScraper requires a positive maxImageBytes when inlineImages is enabled');
-  }
-  if (extractStructured && (!Number.isFinite(maxStructuredBytes) || maxStructuredBytes < Number.EPSILON)) {
-    throw new Error('createProbierzScraper requires a positive maxStructuredBytes when structured extraction is enabled');
-  }
+  const bound = (name) => {
+    const given = options[name];
+    if (given === undefined || given === null) return Infinity;
+    const value = Number(given);
+    if (Number.isNaN(value) || value < Number.EPSILON) {
+      throw new Error(`createProbierzScraper: ${name} must be a positive number, got ${given}`);
+    }
+    return value;
+  };
+  const screenshotLimit = bound('screenshotLimit');
+  const maxImageBytes = bound('maxImageBytes');
+  const maxStructuredBytes = bound('maxStructuredBytes');
 
   return async function scrapeSurface(surface, competitor) {
     const target = TARGET_FOR_KIND[surface.kind];

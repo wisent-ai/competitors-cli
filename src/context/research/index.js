@@ -1,5 +1,5 @@
 import { cleanObject } from '../../competition/model.js';
-import { SURFACE_KINDS, cleanText, competitorBlock, describeError, gatherSearchText, normalizedHost, parsedHttpUrl, parseJsonObjectStrict, requestQueries, requiredBound } from './shared.js';
+import { SURFACE_KINDS, cleanText, competitorBlock, describeError, gatherSearchText, normalizedHost, parsedHttpUrl, parseJsonObjectStrict, requestQueries, optionalBound } from './shared.js';
 export { discoverCompetitorPages } from './pages.js';
 
 // Evidence-first research over a competitor's official surfaces.
@@ -9,8 +9,8 @@ export { discoverCompetitorPages } from './pages.js';
 //     Which queries to run, which surfaces are official, and which pages are
 //     worth deep analysis are judgments the injected model must own.
 //   * No numeric literals as bounds. Every bound (maxQueries,
-//     maxSearchTextBytes, maxPages) is a required caller-supplied option and
-//     the functions throw when one is missing or not a finite positive number.
+//     maxSearchTextBytes, maxPages) is the caller's: an absent bound means
+//     the whole input, and one that is not a positive number throws.
 //   * The caller owns the model and all I/O, injected as functions:
 //       chat(messages, { purpose }) => assistant text
 //       search(query) => raw search-result text
@@ -78,8 +78,8 @@ function normalizeSurfaces(parsed, searchText, errors) {
 export async function resolveCompetitorSurfaces({ competitor, chat, search, options } = {}) {
   if (typeof chat !== 'function') throw new Error('resolveCompetitorSurfaces requires a chat(messages, { purpose }) function');
   if (typeof search !== 'function') throw new Error('resolveCompetitorSurfaces requires a search(query) function');
-  const maxQueries = requiredBound(options, 'maxQueries', 'resolveCompetitorSurfaces');
-  const maxSearchTextBytes = requiredBound(options, 'maxSearchTextBytes', 'resolveCompetitorSurfaces');
+  const maxQueries = optionalBound(options, 'maxQueries', 'resolveCompetitorSurfaces');
+  const maxSearchTextBytes = optionalBound(options, 'maxSearchTextBytes', 'resolveCompetitorSurfaces');
   const name = cleanText(competitor?.name);
   if (!name) throw new Error('resolveCompetitorSurfaces requires a competitor with a name');
 

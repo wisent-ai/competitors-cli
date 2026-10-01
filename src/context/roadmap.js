@@ -8,8 +8,9 @@ function clean(value) {
   return String(value || '').replace(/\s+/gu, ' ').trim();
 }
 
-function positiveInteger(value, name) {
-  if (!Number.isInteger(value) || value <= 0) throw new Error(`${name} must be a positive integer`);
+function optionalPositiveInteger(value, name) {
+  if (value === undefined || value === null) return Infinity;
+  if (!Number.isInteger(value) || value <= 0) throw new Error(`${name} must be a positive integer, got ${value}`);
   return value;
 }
 
@@ -62,7 +63,7 @@ function stableId(productId, item) {
 
 export async function generateCompetitorRoadmap({ product, sourceComparisons = [], observations = [], chat, options = {} } = {}) {
   if (typeof chat !== 'function') throw new Error('generateCompetitorRoadmap requires chat');
-  const maxRoadmapItems = positiveInteger(options.maxRoadmapItems, 'maxRoadmapItems');
+  const maxRoadmapItems = optionalPositiveInteger(options.maxRoadmapItems, 'maxRoadmapItems');
   const entries = evidenceCatalog(sourceComparisons, observations);
   if (!entries.length) return { status: 'no_evidence', items: [], evidence: [], errors: [] };
   const validIds = new Set(entries.map((entry) => entry.id));

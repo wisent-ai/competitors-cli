@@ -27,7 +27,7 @@ It provides a portable command line and JavaScript API. Search, browser capture,
 - deterministic discovery-record normalization and deduplication;
 - model-directed discovery with caller-supplied search and page retrieval;
 - official-surface resolution backed by cited search evidence;
-- bounded evidence catalogs for text, structured page data, and screenshots;
+- evidence catalogs for text, structured page data, and screenshots;
 - evidence-referenced analysis of style, design system, page structure, funnel, SEO, pricing, offers, and promotions;
 - normalized observations and Markdown or JSON product-comparison matrices.
 
@@ -99,15 +99,17 @@ const results = await gatherCompetitorDeepAnalysis(competitors, {
   search,
   scrapeSurface,
   chat,
-  maxQueries: 4,
-  maxSearchTextBytes: 40_000,
-  maxPages: 5,
-  maxTextBytesPerSurface: 18_000,
-  maxScreenshotsPerCatalog: 5,
-  maxImageBytes: 700_000,
-  maxFindingsPerArea: 8,
 })
 ```
+
+Every bound (`maxQueries`, `maxSearchTextBytes`, `maxPages`,
+`maxTextBytesPerSurface`, `maxScreenshotsPerCatalog`, `maxImageBytes`,
+`maxFindingsPerArea`, `maxSourceFiles`, `maxSourceBytesPerFile`,
+`maxSourceFindings`, `maxRoadmapItems`, and the Probierz adapter's
+`screenshotLimit`, `maxImageBytes`, `maxStructuredBytes`) is the caller's. A
+bound left out means the whole input is used; a bound given as anything other
+than a positive number is refused with its name and value. The model and
+search providers' own limits still apply and surface as their errors.
 
 Every retained deep-analysis finding cites an evidence ID from the host-built catalog. Missing surfaces, omitted payloads, invalid model output, and collection failures remain explicit in the result.
 

@@ -1,6 +1,6 @@
 // Discover pages only within verified competitor surfaces.
 import { cleanNullable, cleanObject } from '../../competition/model.js';
-import { SURFACE_KINDS, cleanText, competitorBlock, describeError, gatherSearchText, normalizedHost, parsedHttpUrl, parseJsonObjectStrict, requestQueries, requiredBound } from './shared.js';
+import { SURFACE_KINDS, cleanText, competitorBlock, describeError, gatherSearchText, normalizedHost, parsedHttpUrl, parseJsonObjectStrict, requestQueries, optionalBound } from './shared.js';
 
 const PURPOSE_PAGE_QUERIES = 'competitor-page-queries';
 const PURPOSE_PAGE_SELECTION = 'competitor-page-selection';
@@ -94,9 +94,9 @@ function normalizePages(parsed, verified, maxPages, searchText, errors) {
 export async function discoverCompetitorPages({ competitor, surfaces, chat, search, options } = {}) {
   if (typeof chat !== 'function') throw new Error('discoverCompetitorPages requires a chat(messages, { purpose }) function');
   if (typeof search !== 'function') throw new Error('discoverCompetitorPages requires a search(query) function');
-  const maxQueries = requiredBound(options, 'maxQueries', 'discoverCompetitorPages');
-  const maxSearchTextBytes = requiredBound(options, 'maxSearchTextBytes', 'discoverCompetitorPages');
-  const maxPages = requiredBound(options, 'maxPages', 'discoverCompetitorPages');
+  const maxQueries = optionalBound(options, 'maxQueries', 'discoverCompetitorPages');
+  const maxSearchTextBytes = optionalBound(options, 'maxSearchTextBytes', 'discoverCompetitorPages');
+  const maxPages = optionalBound(options, 'maxPages', 'discoverCompetitorPages');
   const name = cleanText(competitor?.name);
   if (!name) throw new Error('discoverCompetitorPages requires a competitor with a name');
 

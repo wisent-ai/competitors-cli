@@ -1,6 +1,6 @@
 // Construct bounded capture evidence before any model interprets it.
 import { clean, cleanNullable, cleanObject } from '../../competition/model.js';
-import { requirePositiveInteger, requirePositiveNumber } from './bounds.js';
+import { optionalPositiveInteger, optionalPositiveNumber } from './bounds.js';
 
 // Captures arrive either with a nested surface descriptor ({ surface: { kind,
 // target/url } }) or with the surface fields spread onto the capture itself
@@ -36,9 +36,9 @@ function embeddedImageUrl(shot) {
 // Returns { entries, omitted, errors }.
 export function buildEvidenceCatalog(captures = [], options = {}) {
   if (!Array.isArray(captures)) throw new Error('buildEvidenceCatalog requires an array of surface captures');
-  const maxTextBytesPerSurface = requirePositiveNumber(options, 'maxTextBytesPerSurface', 'buildEvidenceCatalog');
-  const maxScreenshotsPerCatalog = requirePositiveInteger(options, 'maxScreenshotsPerCatalog', 'buildEvidenceCatalog');
-  const maxImageBytes = requirePositiveNumber(options, 'maxImageBytes', 'buildEvidenceCatalog');
+  const maxTextBytesPerSurface = optionalPositiveNumber(options, 'maxTextBytesPerSurface', 'buildEvidenceCatalog');
+  const maxScreenshotsPerCatalog = optionalPositiveInteger(options, 'maxScreenshotsPerCatalog', 'buildEvidenceCatalog');
+  const maxImageBytes = optionalPositiveNumber(options, 'maxImageBytes', 'buildEvidenceCatalog');
 
   const entries = [];
   const omitted = [];

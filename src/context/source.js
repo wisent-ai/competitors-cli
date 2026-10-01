@@ -5,8 +5,9 @@
 const PURPOSE_SOURCE_COMPARISON = 'competitor-source-comparison';
 const ASSESSMENTS = new Set(['ours_better', 'theirs_better', 'different', 'equivalent', 'unknown']);
 
-function positiveInteger(value, name) {
-  if (!Number.isInteger(value) || value <= 0) throw new Error(`${name} must be a positive integer`);
+function optionalPositiveInteger(value, name) {
+  if (value === undefined || value === null) return Infinity;
+  if (!Number.isInteger(value) || value <= 0) throw new Error(`${name} must be a positive integer, got ${value}`);
   return value;
 }
 
@@ -20,8 +21,8 @@ function truncateUtf8(value, maximum) {
 }
 
 export function buildSourceEvidenceCatalog(source = {}, options = {}) {
-  const maxFiles = positiveInteger(options.maxSourceFiles, 'maxSourceFiles');
-  const maxBytesPerFile = positiveInteger(options.maxSourceBytesPerFile, 'maxSourceBytesPerFile');
+  const maxFiles = optionalPositiveInteger(options.maxSourceFiles, 'maxSourceFiles');
+  const maxBytesPerFile = optionalPositiveInteger(options.maxSourceBytesPerFile, 'maxSourceBytesPerFile');
   const files = Array.isArray(source.files) ? source.files : [];
   const entries = [];
   const omitted = [];
@@ -69,7 +70,7 @@ function evidenceIds(value, valid) {
 
 export async function analyzeSourceComparison({ product, competitor, productSource, competitorSource, chat, options = {} } = {}) {
   if (typeof chat !== 'function') throw new Error('analyzeSourceComparison requires chat');
-  const maxFindings = positiveInteger(options.maxSourceFindings, 'maxSourceFindings');
+  const maxFindings = optionalPositiveInteger(options.maxSourceFindings, 'maxSourceFindings');
   const ours = buildSourceEvidenceCatalog(productSource, options);
   const theirs = buildSourceEvidenceCatalog(competitorSource, options);
   const oursIds = new Set(ours.entries.map((entry) => entry.id));

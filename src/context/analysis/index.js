@@ -1,5 +1,5 @@
 import { cleanNullable, cleanObject, cleanStringArray } from '../../competition/model.js';
-import { requirePositiveInteger } from './bounds.js';
+import { optionalPositiveInteger } from './bounds.js';
 export { buildEvidenceCatalog } from './catalog.js';
 
 // Evidence catalog + eight-area deep competitor analysis.
@@ -8,8 +8,8 @@ export { buildEvidenceCatalog } from './catalog.js';
 //   * No hardcoded keyword tables or market vocabulary: prompts carry only the
 //     analysis-area name; all judgment is the injected model's.
 //   * No numeric literal defaults. Every bound (maxTextBytesPerSurface,
-//     maxScreenshotsPerCatalog, maxImageBytes, maxFindingsPerArea) is a
-//     required caller-supplied option, validated with a clear throw.
+//     maxScreenshotsPerCatalog, maxImageBytes, maxFindingsPerArea) is the
+//     caller's: an absent bound means the whole input, a malformed one throws.
 //   * Evidence IDs are host-assigned and deterministic (derived from array
 //     order only — no randomness, no timestamps). Model-returned evidence
 //     references are filtered against the host catalog, never trusted; a
@@ -123,7 +123,7 @@ function confidenceOrNull(value) {
 export async function runDeepAnalysis({ competitor = null, catalog, chat, options = {} } = {}) {
   if (typeof chat !== 'function') throw new Error('runDeepAnalysis requires a chat(messages, { purpose }) function');
   if (!catalog || !Array.isArray(catalog.entries)) throw new Error('runDeepAnalysis requires a catalog with an entries array (see buildEvidenceCatalog)');
-  const maxFindingsPerArea = requirePositiveInteger(options, 'maxFindingsPerArea', 'runDeepAnalysis');
+  const maxFindingsPerArea = optionalPositiveInteger(options, 'maxFindingsPerArea', 'runDeepAnalysis');
   const areas = selectedAreas(options);
   const validIds = new Set(catalog.entries.map((entry) => entry.id));
   const evidence = evidenceBlocks(catalog.entries);

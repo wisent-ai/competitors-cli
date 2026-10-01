@@ -13,12 +13,13 @@ export function describeError(error) {
   return cleanText(error?.message || String(error));
 }
 
-// The zeros below are validity/offset zeros, not bounds: every actual bound
-// (maxQueries, maxSearchTextBytes, maxPages) is a caller-supplied option.
-export function requiredBound(options, name, caller) {
+// A bound the caller does not give (maxQueries, maxSearchTextBytes, maxPages)
+// is no bound; one that is given but is not a positive number is refused.
+export function optionalBound(options, name, caller) {
   const value = options?.[name];
-  if (typeof value !== 'number' || !Number.isFinite(value) || !(value > 0)) {
-    throw new Error(`${caller} requires options.${name} to be a finite positive number`);
+  if (value === undefined || value === null) return Infinity;
+  if (typeof value !== 'number' || Number.isNaN(value) || !(value > 0)) {
+    throw new Error(`${caller}: options.${name} must be a positive number, got ${value}`);
   }
   return value;
 }
