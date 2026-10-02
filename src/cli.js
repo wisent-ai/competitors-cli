@@ -44,6 +44,28 @@ async function jsonFile(path, label) {
   return JSON.parse(await readFile(path, 'utf8'))
 }
 
+// The flags each command reads; anything else is refused before the command
+// runs, so a misspelt flag never silently falls back to a default (rule 12).
+const FLAGS = {
+  registry: '--text'.split(' '),
+  discover: '--records --own-domain --text'.split(' '),
+  compare: '--product --competitors --format'.split(' '),
+}
+const VALUED = new Set('--records --own-domain --product --competitors --format'.split(' '))
+
+function refuseUnknown(command, args) {
+  const known = FLAGS[command]
+  if (!known) return
+  for (let index = 1; index < args.length; index += 1) {
+    const arg = args[index]
+    if (!known.includes(arg)) throw new UsageError(`competitors ${command} does not take ${arg}; it takes ${known.join(', ')}\n\n${usage()}`)
+    if (VALUED.has(arg)) {
+      if (index + 1 >= args.length) throw new UsageError(`${arg} needs a value\n\n${usage()}`)
+      index += 1
+    }
+  }
+}
+
 async function main() {
   const args = process.argv.slice(2)
   const command = args[0]
@@ -51,6 +73,7 @@ async function main() {
     console.log(usage())
     return
   }
+  refuseUnknown(command, args)
   if (command === 'registry') {
     console.log(render({ competitors: DEFAULT_COMPETITORS }, args.includes('--text')))
     return
