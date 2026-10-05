@@ -114,6 +114,10 @@ Source-file byte bounds retain only complete UTF-8 characters. A cut before a
 multibyte character can use fewer bytes than the declared maximum; it never
 inserts replacement text or exceeds that maximum. `entries[].truncated` and
 `omitted` expose the evidence lost to explicitly declared bounds.
+Catalog `coverage` retains the declared limits and whether all supplied evidence
+survived. Source comparisons return `partial` when those catalogs lost evidence
+or `maxSourceFindings` left model items unprocessed; `coverage.unprocessedFindings`
+counts the unexamined items, not a claimed number of valid omitted findings.
 
 Every retained deep-analysis finding cites an evidence ID from the host-built catalog. Missing surfaces, omitted payloads, invalid model output, and collection failures remain explicit in the result.
 

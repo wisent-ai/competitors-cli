@@ -48,6 +48,11 @@ export function buildSourceEvidenceCatalog(source = {}, options = {}) {
     revision: clean(source.revision),
     entries,
     omitted,
+    coverage: {
+      maxSourceFiles: options.maxSourceFiles ?? null,
+      maxSourceBytesPerFile: options.maxSourceBytesPerFile ?? null,
+      complete: omitted.length === 0 && entries.every(entry => !entry.truncated),
+    },
   };
 }
 
@@ -96,8 +101,12 @@ export async function analyzeSourceComparison({ product, competitor, productSour
   }
   const findings = [];
   const errors = [];
-  for (const item of parsed) {
-    if (findings.length >= maxFindings) break;
+  let unprocessedFindings = 0;
+  for (const [index, item] of parsed.entries()) {
+    if (findings.length >= maxFindings) {
+      unprocessedFindings = parsed.length - index;
+      break;
+    }
     const capability = clean(item?.capability);
     const summary = clean(item?.summary);
     const oursEvidenceIds = evidenceIds(item?.oursEvidenceIds, oursIds);
@@ -117,5 +126,10 @@ export async function analyzeSourceComparison({ product, competitor, productSour
       limitations: [...new Set((Array.isArray(item?.limitations) ? item.limitations : []).map(clean).filter(Boolean))],
     });
   }
-  return { status: errors.length ? 'partial' : 'complete', ours, theirs, findings, errors };
+  const coverage = {
+    maxSourceFindings: options.maxSourceFindings ?? null,
+    unprocessedFindings,
+    complete: ours.coverage.complete && theirs.coverage.complete && unprocessedFindings === 0,
+  };
+  return { status: errors.length || !coverage.complete ? 'partial' : 'complete', ours, theirs, findings, errors, coverage };
 }
