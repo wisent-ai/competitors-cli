@@ -17,7 +17,7 @@ function clean(value) {
 
 function truncateUtf8(value, maximum) {
   const bytes = Buffer.from(String(value || ''), 'utf8');
-  return bytes.length <= maximum ? bytes.toString('utf8') : bytes.subarray(0, maximum).toString('utf8');
+  return bytes.length <= maximum ? bytes.toString('utf8') : new TextDecoder().decode(bytes.subarray(0, maximum), { stream: true });
 }
 
 export function buildSourceEvidenceCatalog(source = {}, options = {}) {

@@ -5,3 +5,4 @@ node_modules/
 artifacts/
 reports/private/
 .DS_Store
+/.build/

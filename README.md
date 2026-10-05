@@ -110,6 +110,10 @@ Every bound (`maxQueries`, `maxSearchTextBytes`, `maxPages`,
 bound left out means the whole input is used; a bound given as anything other
 than a positive number is refused with its name and value. The model and
 search providers' own limits still apply and surface as their errors.
+Source-file byte bounds retain only complete UTF-8 characters. A cut before a
+multibyte character can use fewer bytes than the declared maximum; it never
+inserts replacement text or exceeds that maximum. `entries[].truncated` and
+`omitted` expose the evidence lost to explicitly declared bounds.
 
 Every retained deep-analysis finding cites an evidence ID from the host-built catalog. Missing surfaces, omitted payloads, invalid model output, and collection failures remain explicit in the result.
 
@@ -119,9 +123,11 @@ selection, `analysis/` separates evidence construction from model analysis,
 and `gathering/` owns capture orchestration. Observation conversion stays
 separate from those collection steps.
 
-Run `npm test` for the real local discovery command, its missing-input refusal,
-and the public capture catalog's Unicode, identity, and omission boundaries.
-These tests do not replace or claim a live model, search, or browser run.
+Run `npm test` for the public source catalog's full-input, Unicode byte-boundary,
+file-omission and invalid-bound behavior. Reports under `.build/source-evidence`
+retain the source revision and patches, commands, exits and TAP output; a source
+change during execution refuses qualification. These tests do not claim a live
+model, search, browser or application GUI run.
 
 ## Operational model
 

@@ -28,6 +28,9 @@
     "src",
     "LICENSE"
   ],
+  "scripts": {
+    "test": "node tests/context/run.mjs"
+  },
   "engines": {
     "node": ">=20"
   }
