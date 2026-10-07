@@ -140,6 +140,11 @@ retain the source revision and patches, commands, exits and TAP output; a source
 change during execution refuses qualification. These tests do not claim a live
 model, search, browser or application GUI run.
 
+Run `npm run test:registry` for the registry's lifecycle through the CLI: it adds,
+shows, edits, compares against and removes a competitor in a fresh registry file,
+reads the file after each step and checks every refusal. Its report,
+`.build/real-tests/registry/<stamp>/report.txt`, names the revision and each check.
+
 ## Operational model
 
 - **Input:** explicit JSON records or injected search, capture, and model functions.
