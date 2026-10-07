@@ -29,7 +29,8 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node tests/context/run.mjs"
+    "test": "node tests/context/run.mjs",
+    "test:registry": "sh tests/registry/registry.sh"
   },
   "engines": {
     "node": ">=20"
