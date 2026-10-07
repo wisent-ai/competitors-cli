@@ -46,8 +46,12 @@ Requires Node.js 20 or newer.
 ```bash
 git clone https://github.com/wisent-ai/competitors-cli.git
 cd competitors-cli
-node src/cli.js registry
+export COMPETITORS_REGISTRY="$PWD/competitors.registry.json"
+node src/cli.js registry add --competitor alternative.json
+node src/cli.js registry list
 ```
+
+`alternative.json` is one competitor record, `{"name": "Alternative", "domains": ["alternative.example"]}`. The registry file starts empty and changes only through `registry add`, `registry edit <id> --competitor <changes.json>` and `registry remove <id>`; `registry show <id>` reads one record. A missing registry name is refused with `no competitor registry is named: pass --registry <file> or set COMPETITORS_REGISTRY`, an unknown id names the ids the file holds, and adding an id twice is refused.
 
 Create `ours.json`:
 
@@ -71,17 +75,20 @@ Create `competitors.json`:
 ]
 ```
 
-Generate a comparison:
+Generate a comparison from that file, or from the registry:
 
 ```bash
 node src/cli.js compare --product ours.json --competitors competitors.json --format markdown
+node src/cli.js compare --product ours.json --registry "$COMPETITORS_REGISTRY" --format markdown
 ```
+
+`compare` takes exactly one of the two, and refuses an empty registry. `discover --registry <file>` deduplicates against the registered competitors; without it nothing is assumed to be known.
 
 ## Primary interfaces
 
 | Interface | Contract |
 |---|---|
-| `competitors registry` | print the maintained identity seed registry |
+| `competitors registry list\|show\|add\|edit\|remove` | the registry file the CLI owns |
 | `competitors discover` | normalize and deduplicate caller-supplied discovery records |
 | `competitors compare` | generate a feature and pricing matrix from explicit product records |
 | `@wisent-ai/competitors-cli` | identities, observations, discovery, context, and comparison APIs |

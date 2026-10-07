@@ -25,7 +25,7 @@ import {
 // read explicitly (optional chaining) instead of destructuring-default params.
 
 function resolveRegistry(options) {
-  return options && options.registry ? options.registry : createCompetitorRegistry();
+  return options && options.registry ? options.registry : createCompetitorRegistry([]);
 }
 
 function resolveCompetitorInput(input, registry) {
@@ -150,7 +150,7 @@ export function buildCompetitorObservationEvent(observationInput, context = {}) 
 export function createCompetitorTracker(options = {}) {
   const trackEvent = options.trackEvent;
   if (typeof trackEvent !== 'function') throw new Error('createCompetitorTracker requires trackEvent');
-  const registry = options.registry ? options.registry : createCompetitorRegistry();
+  const registry = options.registry ? options.registry : createCompetitorRegistry([]);
   const defaultContext = options.defaultContext ? options.defaultContext : {};
 
   async function trackCompetitorObservation(observationInput, context = {}) {

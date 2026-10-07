@@ -1,6 +1,6 @@
 export * from './competition/model.js'
 export * from './competition/observations.js'
-export * from './competition/seed.js'
+export * from './competition/registry-file.js'
 export * from './discovery/records.js'
 export * from './discovery/index.js'
 export * from './context/index.js'

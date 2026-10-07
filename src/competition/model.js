@@ -1,5 +1,3 @@
-import { DEFAULT_COMPETITORS } from './seed.js';
-export { DEFAULT_COMPETITORS };
 
 // Competitor domain model: enums, shared shapers, and normalization + registry.
 // No arbitrary numeric caps, no invented numeric defaults: callers own bounds.
@@ -182,7 +180,10 @@ export function normalizeCompetitor(input = {}) {
   };
 }
 
-export function createCompetitorRegistry(competitors = DEFAULT_COMPETITORS) {
+// The caller names the competitors; there is no built-in list (`competitors
+// registry` keeps the CLI's own in a registry file).
+export function createCompetitorRegistry(competitors) {
+  if (!Array.isArray(competitors)) throw new Error('createCompetitorRegistry requires the competitors to index');
   const normalized = competitors.map(normalizeCompetitor);
   const byId = new Map(normalized.map((competitor) => [competitor.id, competitor]));
   const byDomain = new Map();

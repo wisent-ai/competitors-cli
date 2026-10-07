@@ -1,5 +1,4 @@
 import {
-  DEFAULT_COMPETITORS,
   cleanNullable,
   cleanObject,
   countsFrom,
@@ -97,7 +96,7 @@ export function candidateToCompetitor(candidate) {
 }
 
 export function discoverCompetitorCandidates(records = [], options = {}) {
-  const existingCompetitors = options.existingCompetitors ? options.existingCompetitors : DEFAULT_COMPETITORS;
+  const existingCompetitors = options.existingCompetitors ? options.existingCompetitors : [];
   const ownDomains = options.ownDomains ? options.ownDomains : [];
   const ownNames = options.ownNames ? options.ownNames : [];
   const registry = createCompetitorRegistry(existingCompetitors);
@@ -218,7 +217,7 @@ export function buildCompetitorDiscoveryEvent(candidate, context = {}) {
 export function createCompetitorDiscoveryTracker(options = {}) {
   const trackEvent = options.trackEvent;
   if (typeof trackEvent !== 'function') throw new Error('createCompetitorDiscoveryTracker requires trackEvent');
-  const existingCompetitors = options.existingCompetitors ? options.existingCompetitors : DEFAULT_COMPETITORS;
+  const existingCompetitors = options.existingCompetitors ? options.existingCompetitors : [];
   const defaultContext = options.defaultContext ? options.defaultContext : {};
 
   async function trackDiscoveryRun(records = [], runOptions = {}, context = {}) {
