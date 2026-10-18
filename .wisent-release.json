@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "product": "competitors-cli",
+  "releases": false,
+  "reason": "competitors-cli is run from source: the README clones the repository, runs npm install and runs node src/cli.js, and the package has no release workflow or publish configuration and is not on the npm registry, so it declares no package, image, hosted or versioned artifact publisher."
+}
