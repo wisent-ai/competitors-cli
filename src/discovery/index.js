@@ -1,5 +1,4 @@
 import {
-  cleanNullable,
   cleanObject,
   countsFrom,
   createCompetitorRegistry,
@@ -12,12 +11,17 @@ import {
   tally,
 } from '../competition/model.js';
 import { createCompetitorModel } from '../crawl.js';
+import { eventIdentity, runIdentity } from '../events/identity.js';
 import {
   candidateSeed,
   canonicalCandidateKey,
   mergeRecord,
   normalizeDiscoveryRecord,
 } from './records.js';
+
+export { normalizeDiscoveryRecord };
+
+const SUBJECT = 'a competitor discovery event';
 
 // Competitor discovery in two layers:
 //   1. discoverCompetitorCandidates (sync): group and merge structured records
@@ -186,7 +190,7 @@ function discoveryCandidateProperties(candidate) {
   });
 }
 
-export function buildCompetitorDiscoveryEvent(candidate, context = {}) {
+export function buildCompetitorDiscoveryEvent(candidate, context, sessionId) {
   if (!candidate || !(candidate.sourceTypes instanceof Set)) {
     throw new Error('buildCompetitorDiscoveryEvent requires a discovered candidate');
   }
@@ -200,16 +204,13 @@ export function buildCompetitorDiscoveryEvent(candidate, context = {}) {
       sources: [...candidate.sourceTypes].sort(),
     })}`,
     eventName: COMPETITOR_DISCOVERY_EVENTS.CANDIDATE_DISCOVERED,
-    userId: context.userId,
-    anonymousId: context.anonymousId || context.userId || 'deep-analytics-competition-discovery',
-    sessionId: context.sessionId || `competition-discovery:${observedDay}`,
-    path: context.path || '/competition/discovery',
-    host: context.host || 'deep-analytics.wisent.ai',
-    url: context.url || evidenceWithUrl?.evidenceUrl,
-    referrer: context.referrer,
+    ...eventIdentity(context, SUBJECT),
+    // The caller's url, or the candidate's first evidence url when it states none.
+    url: context.url ?? evidenceWithUrl?.evidenceUrl,
+    sessionId,
     properties: {
       ...discoveryCandidateProperties(candidate),
-      ...(context.properties || {}),
+      ...context.properties,
     },
   };
 }
@@ -217,28 +218,31 @@ export function buildCompetitorDiscoveryEvent(candidate, context = {}) {
 export function createCompetitorDiscoveryTracker(options = {}) {
   const trackEvent = options.trackEvent;
   if (typeof trackEvent !== 'function') throw new Error('createCompetitorDiscoveryTracker requires trackEvent');
-  const existingCompetitors = options.existingCompetitors ? options.existingCompetitors : [];
-  const defaultContext = options.defaultContext ? options.defaultContext : {};
+  const existingCompetitors = options.existingCompetitors;
+  const defaultContext = options.defaultContext;
 
   async function trackDiscoveryRun(records = [], runOptions = {}, context = {}) {
     const candidates = discoverCompetitorCandidates(records, { existingCompetitors, ...runOptions });
-    const runId = cleanNullable(runOptions.runId) || `competition-discovery:${stableHash({
-      day: dayKey(runOptions.observedAt),
-      candidates: candidates.map((candidate) => candidate.id).sort(),
-    })}`;
+    const runId = runIdentity(
+      runOptions.runId,
+      'competition-discovery',
+      runOptions.observedAt,
+      'candidates',
+      candidates.map((candidate) => candidate.id),
+    );
     const mergedContext = {
       ...defaultContext,
       ...context,
       properties: {
-        ...(defaultContext.properties || {}),
-        ...(context.properties || {}),
+        ...defaultContext?.properties,
+        ...context.properties,
         discovery_run_id: runId,
       },
     };
 
     const candidateEvents = [];
     for (const candidate of candidates) {
-      const event = buildCompetitorDiscoveryEvent(candidate, mergedContext);
+      const event = buildCompetitorDiscoveryEvent(candidate, mergedContext, runId);
       candidateEvents.push({ candidate, event, result: await trackEvent(event) });
     }
 
@@ -247,13 +251,8 @@ export function createCompetitorDiscoveryTracker(options = {}) {
     const runEvent = {
       eventId: `${COMPETITOR_DISCOVERY_EVENTS.RUN_RECORDED}:${runId}`,
       eventName: COMPETITOR_DISCOVERY_EVENTS.RUN_RECORDED,
-      userId: mergedContext.userId,
-      anonymousId: mergedContext.anonymousId || mergedContext.userId || 'deep-analytics-competition-discovery',
-      sessionId: mergedContext.sessionId || runId,
-      path: mergedContext.path || '/competition/discovery',
-      host: mergedContext.host || 'deep-analytics.wisent.ai',
-      url: mergedContext.url,
-      referrer: mergedContext.referrer,
+      ...eventIdentity(mergedContext, SUBJECT),
+      sessionId: runId,
       properties: cleanObject({
         source: 'deep_analytics_competition_discovery',
         discovery_run_id: runId,
@@ -263,7 +262,7 @@ export function createCompetitorDiscoveryTracker(options = {}) {
         known_competitor_count: String(knownCount),
         new_candidate_count: String(newCount),
         source_types: [...new Set(candidates.flatMap((candidate) => [...candidate.sourceTypes]))].sort().join(','),
-        ...(mergedContext.properties || {}),
+        ...mergedContext.properties,
       }),
     };
     const runResult = await trackEvent(runEvent);
@@ -280,7 +279,7 @@ export function createCompetitorDiscoveryTracker(options = {}) {
 export function summarizeDiscoveryCandidates(candidates = []) {
   const byStatus = tally(candidates, (candidate) => candidate.status);
   const byProductCategory = tally(candidates, (candidate) => candidate.productCategory);
-  const sourceEntries = candidates.flatMap((candidate) => [...(candidate.sourceTypes || [])].map((sourceType) => ({ sourceType })));
+  const sourceEntries = candidates.flatMap((candidate) => [...candidate.sourceTypes].map((sourceType) => ({ sourceType })));
   const bySourceType = tally(sourceEntries, (entry) => entry.sourceType);
 
   return {
