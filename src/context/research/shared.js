@@ -1,16 +1,19 @@
-// Shared query execution, strict response parsing and URL handling for research.
+// Shared query execution, schema-bound answers and URL handling for research.
 import { cleanStringArray } from '../../competition/model.js';
+import { CONTEXT_SURFACE_KINDS } from '../gathering/captures.js';
+import { replyObject, schemaFormat } from '../adapters/answer.js';
 
-// Mirrors CONTEXT_SURFACE_KINDS in ../gathering/captures.js. These are platform
-// surface identifiers required by the capture contract, not market vocabulary.
-export const SURFACE_KINDS = new Set(['website', 'ios_app', 'android_app']);
+// The surface kinds research may name: the capture contract's own.
+export const SURFACE_KINDS = new Set(Object.values(CONTEXT_SURFACE_KINDS));
 
+/** Text with runs of whitespace collapsed; a value that is not text has none. */
 export function cleanText(value) {
-  return String(value || '').replace(/\s+/g, ' ').trim();
+  if (typeof value !== 'string') return '';
+  return value.replace(/\s+/gu, ' ').trim();
 }
 
 export function describeError(error) {
-  return cleanText(error?.message || String(error));
+  return cleanText(error instanceof Error ? error.message : String(error));
 }
 
 // A bound the caller does not give (maxQueries, maxSearchTextBytes, maxPages)
@@ -18,66 +21,26 @@ export function describeError(error) {
 export function optionalBound(options, name, caller) {
   const value = options?.[name];
   if (value === undefined || value === null) return Infinity;
-  if (typeof value !== 'number' || Number.isNaN(value) || !(value > 0)) {
+  if (typeof value !== 'number' || Number.isNaN(value) || !(value > Number())) {
     throw new Error(`${caller}: options.${name} must be a positive number, got ${value}`);
   }
   return value;
 }
 
+/** The longest start of `text` whose UTF-8 encoding fits `maxBytes`, cut only between characters. */
 function boundBytes(text, maxBytes) {
-  const value = String(text || '');
-  const buffer = Buffer.from(value, 'utf8');
-  if (buffer.byteLength <= maxBytes) return value;
-  return buffer.subarray(0, maxBytes).toString('utf8');
+  if (Buffer.byteLength(text, 'utf8') <= maxBytes) return text;
+  const { read } = new TextEncoder().encodeInto(text, new Uint8Array(maxBytes));
+  return text.slice(Number(), read);
 }
 
-// Strict parsers: a reply without the expected JSON shape throws, and callers
-// record the failure as an explicit stage error. No silent defaults.
-function parseJsonArrayStrict(raw, stage) {
-  const match = String(raw || '').match(/\[[\s\S]*\]/u);
-  if (!match) throw new Error(`${stage}: model reply contains no JSON array`);
-  let parsed;
-  try {
-    parsed = JSON.parse(match.join(''));
-  } catch (cause) {
-    throw new Error(`${stage}: model reply is not parseable JSON: ${describeError(cause)}`);
-  }
-  if (!Array.isArray(parsed)) throw new Error(`${stage}: model reply JSON is not an array`);
-  return parsed;
-}
-
-export function parseJsonObjectStrict(raw, stage) {
-  const match = String(raw || '').match(/\{[\s\S]*\}/u);
-  if (!match) throw new Error(`${stage}: model reply contains no JSON object`);
-  let parsed;
-  try {
-    parsed = JSON.parse(match.join(''));
-  } catch (cause) {
-    throw new Error(`${stage}: model reply is not parseable JSON: ${describeError(cause)}`);
-  }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error(`${stage}: model reply JSON is not an object`);
-  }
-  return parsed;
-}
-
-function queryList(value) {
-  return cleanStringArray(
-    value.map((entry) => cleanText(typeof entry === 'string' ? entry : entry?.query || entry?.value || entry?.text)),
-  );
-}
+const QUERIES_FORMAT = schemaFormat('research_queries', { queries: { type: 'array', items: { type: 'string' } } });
 
 export function parsedHttpUrl(value) {
   const text = cleanText(value);
-  if (!text) return null;
-  let url;
-  try {
-    url = new URL(text);
-  } catch {
-    return null;
-  }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-  return url;
+  if (!URL.canParse(text)) return null;
+  const url = new URL(text);
+  return url.protocol === 'http:' || url.protocol === 'https:' ? url : null;
 }
 
 export function normalizedHost(url) {
@@ -93,26 +56,31 @@ export function competitorBlock(competitor) {
   return lines.join('\n');
 }
 
-// Shared stage: ask the model for search queries, strictly parsed and bounded.
+/** A stage that failed: its error is recorded, and the stage gives no answer. */
+function stageFailed(errors, stage, error) {
+  errors.push({ stage, error: describeError(error) });
+  return null;
+}
+
+// Shared stage: ask the model for the object `format` binds its reply to,
+// refused unless `holds` accepts it. Returns null when the stage failed (its
+// error recorded), otherwise the object.
+export async function askStage({ chat, purpose, stage, messages, format, holds, errors }) {
+  try {
+    return replyObject(await chat(messages, { purpose, responseFormat: format }), stage, format.json_schema.name, holds);
+  } catch (error) {
+    return stageFailed(errors, stage, error);
+  }
+}
+
+// Shared stage: ask the model for search queries, schema-bound and bounded.
 // Returns null when the stage failed (error already recorded), otherwise the
-// bounded query list (possibly a genuinely parsed empty array).
+// bounded query list (possibly a genuinely answered empty list).
 export async function requestQueries({ chat, purpose, stage, messages, maxQueries, errors }) {
-  let reply;
-  try {
-    reply = await chat(messages, { purpose });
-  } catch (error) {
-    errors.push({ stage, error: describeError(error) });
-    return null;
-  }
-  let parsed;
-  try {
-    parsed = parseJsonArrayStrict(reply, stage);
-  } catch (error) {
-    errors.push({ stage, error: describeError(error) });
-    return null;
-  }
-  const queries = queryList(parsed).filter((query, index) => index < maxQueries);
-  if (parsed.length && !queries.length) {
+  const answer = await askStage({ chat, purpose, stage, messages, format: QUERIES_FORMAT, holds: (object) => Array.isArray(object.queries), errors });
+  if (answer === null) return null;
+  const queries = cleanStringArray(answer.queries).filter((query, index) => index < maxQueries);
+  if (answer.queries.length && !queries.length) {
     errors.push({ stage, error: 'model returned queries but none were usable strings' });
   }
   return queries;
@@ -130,9 +98,12 @@ export async function gatherSearchText({ search, queries, maxSearchTextBytes, er
       errors.push({ stage: 'search', query, error: describeError(error) });
       continue;
     }
+    if (typeof raw !== 'string') {
+      errors.push({ stage: 'search', query, error: `search answered ${JSON.stringify(raw)}, not result text` });
+      continue;
+    }
     const text = cleanText(raw);
     if (text) chunks.push(`[query: ${query}] ${text}`);
   }
   return boundBytes(chunks.join('\n\n'), maxSearchTextBytes);
 }
-

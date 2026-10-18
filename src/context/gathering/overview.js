@@ -10,15 +10,43 @@ import { CONTEXT_SURFACE_KINDS, captureEvidence, cleanText, screenshotEvidence, 
 
 const PURPOSE_CONTEXT = 'competitor-context';
 
-function parseJsonObject(raw) {
-  const match = String(raw || '').match(/\{[\s\S]*\}/u);
-  if (!match) return null;
+// The context the model answers, bound as a strict JSON schema
+// (`response_format` `json_schema`), so the reply is that object and is never
+// searched for one inside prose. Strict schemas require every property.
+const CONTEXT_PROPERTIES = {
+  positioning: { type: 'string' },
+  keyFeatures: { type: 'array', items: { type: 'string' } },
+  pricing: { type: 'string' },
+  targetAudience: { type: 'string' },
+  differentiation: { type: 'string' },
+  notes: { type: 'string' },
+};
+const CONTEXT_RESPONSE_FORMAT = {
+  type: 'json_schema',
+  json_schema: {
+    name: 'competitor_context',
+    strict: true,
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: Object.keys(CONTEXT_PROPERTIES),
+      properties: CONTEXT_PROPERTIES,
+    },
+  },
+};
+
+// The JSON object the model's context reply is; a reply that is not one is
+// the gathering's failure, said with the reply, never an absent context.
+function contextReplyObject(raw) {
+  if (typeof raw !== 'string') throw new Error(`model context reply is not text: ${JSON.stringify(raw)}`);
+  let parsed;
   try {
-    const parsed = JSON.parse(match.join(''));
-    return parsed && typeof parsed === 'object' ? parsed : null;
-  } catch {
-    return null;
+    parsed = JSON.parse(raw.trim());
+  } catch (cause) {
+    throw new Error(`model context reply is not parseable JSON (${cause instanceof Error ? cause.message : String(cause)}): ${cleanText(raw)}`);
   }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(`model context reply JSON is not an object: ${cleanText(raw)}`);
+  return parsed;
 }
 
 export function competitorSurfaces(competitor) {
@@ -47,14 +75,13 @@ function contextMessages(competitor, evidence) {
   return [
     {
       role: 'system',
-      content: 'You analyze a competitor from captured web and app evidence (page text and screenshots). Return ONLY a JSON object with these fields: {"positioning":"...","keyFeatures":["..."],"pricing":"...","targetAudience":"...","differentiation":"...","notes":"..."}. Use an empty string or empty array when the evidence does not support a field. No prose, no markdown.',
+      content: 'You analyze a competitor from captured web and app evidence (page text and screenshots) and answer the competitor_context object: its positioning, key features, pricing, target audience, differentiation and notes. Use an empty string or empty array when the evidence does not support a field.',
     },
     { role: 'user', content },
   ];
 }
 
 function normalizeContext(parsed) {
-  if (!parsed) return null;
   return cleanObject({
     positioning: cleanNullable(parsed.positioning),
     keyFeatures: cleanStringArray(parsed.keyFeatures),
@@ -90,8 +117,8 @@ export async function gatherCompetitorContext(competitors = [], options = {}) {
     let contextError = null;
     if (captures.length) {
       try {
-        const reply = await chat(contextMessages(competitor, captureEvidence(captures)), { purpose: PURPOSE_CONTEXT });
-        context = normalizeContext(parseJsonObject(reply));
+        const reply = await chat(contextMessages(competitor, captureEvidence(captures)), { purpose: PURPOSE_CONTEXT, responseFormat: CONTEXT_RESPONSE_FORMAT });
+        context = normalizeContext(contextReplyObject(reply));
       } catch (error) {
         contextError = cleanText(error?.message || String(error));
       }

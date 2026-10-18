@@ -30,9 +30,13 @@
   ],
   "scripts": {
     "test": "node tests/context/run.mjs",
-    "test:registry": "sh tests/registry/registry.sh"
+    "test:registry": "sh tests/registry/registry.sh",
+    "test:registry:concurrency": "node tests/registry/concurrency.mjs"
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "fs-ext": "2.1.1"
   }
 }

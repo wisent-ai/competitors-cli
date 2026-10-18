@@ -1,5 +1,6 @@
 import { cleanObject } from '../../competition/model.js';
-import { SURFACE_KINDS, cleanText, competitorBlock, describeError, gatherSearchText, normalizedHost, parsedHttpUrl, parseJsonObjectStrict, requestQueries, optionalBound } from './shared.js';
+import { strictObject, schemaFormat } from '../adapters/answer.js';
+import { SURFACE_KINDS, askStage, cleanText, competitorBlock, gatherSearchText, normalizedHost, parsedHttpUrl, requestQueries, optionalBound } from './shared.js';
 export { discoverCompetitorPages } from './pages.js';
 
 // Evidence-first research over a competitor's official surfaces.
@@ -12,12 +13,13 @@ export { discoverCompetitorPages } from './pages.js';
 //     maxSearchTextBytes, maxPages) is the caller's: an absent bound means
 //     the whole input, and one that is not a positive number throws.
 //   * The caller owns the model and all I/O, injected as functions:
-//       chat(messages, { purpose }) => assistant text
+//       chat(messages, { purpose, responseFormat }) => assistant text
 //       search(query) => raw search-result text
 //     This module never touches the network or filesystem itself.
-//   * Strict JSON: an unparseable or wrong-shape model reply is surfaced as an
-//     explicit stage error and never silently degrades to a default. An empty
-//     result exists only as a genuinely parsed empty array.
+//   * Schema-bound answers: every model step sends a strict json_schema and
+//     the reply must be that object; one that is not is an explicit stage
+//     error and never silently degrades to a default. An empty result exists
+//     only as a genuinely answered empty list.
 //   * Evidence first: registry-claimed domains are untrusted hints. A surface
 //     is verified only when the model cites a search-result URL that is
 //     literally present in the gathered search evidence. Page selections are
@@ -29,26 +31,32 @@ export { discoverCompetitorPages } from './pages.js';
 const PURPOSE_SURFACE_QUERIES = 'competitor-surface-queries';
 const PURPOSE_SURFACE_RESOLUTION = 'competitor-surface-resolution';
 
+// The surfaces the model may name, each a kind of the capture contract, the
+// surface's URL and the search-result URL that establishes it.
+const SURFACES_FORMAT = schemaFormat('competitor_surfaces', {
+  surfaces: {
+    type: 'array',
+    items: strictObject({ kind: { type: 'string', enum: [...SURFACE_KINDS] }, url: { type: 'string' }, evidence: { type: 'string' } }),
+  },
+});
+
+/** The stage's result when it ends without resolving a surface. */
+function unresolved(queries, errors) {
+  return { surfaces: [], queries, errors, status: 'unresolved' };
+}
+
 function normalizeSurfaces(parsed, searchText, errors) {
-  if (!Array.isArray(parsed.surfaces)) {
-    errors.push({ stage: 'surface-resolution', reason: 'missing_surfaces_array', error: 'model reply object has no surfaces array' });
-    return [];
-  }
   const searchTextLower = searchText.toLowerCase();
   const byKey = new Map();
   for (const entry of parsed.surfaces) {
-    if (!entry || typeof entry !== 'object') {
-      errors.push({ stage: 'surface-validation', reason: 'invalid_entry', error: 'surface entry is not an object; dropped' });
-      continue;
-    }
-    const kind = cleanText(entry.kind).toLowerCase();
+    const kind = entry.kind;
     if (!SURFACE_KINDS.has(kind)) {
-      errors.push({ stage: 'surface-validation', reason: 'unsupported_kind', error: `unsupported surface kind: ${kind || '(missing)'}; dropped` });
+      errors.push({ stage: 'surface-validation', reason: 'unsupported_kind', error: `unsupported surface kind: ${JSON.stringify(kind)}; dropped` });
       continue;
     }
     const url = parsedHttpUrl(entry.url);
     if (!url) {
-      errors.push({ stage: 'surface-validation', reason: 'invalid_url', error: `invalid or non-http(s) surface url: ${cleanText(entry.url) || '(missing)'}; dropped` });
+      errors.push({ stage: 'surface-validation', reason: 'invalid_url', error: `invalid or non-http(s) surface url: ${JSON.stringify(entry.url)}; dropped` });
       continue;
     }
     // A citation counts only when it is a valid http(s) URL that literally
@@ -75,8 +83,8 @@ function normalizeSurfaces(parsed, searchText, errors) {
 // Resolve a competitor's official surfaces (website, iOS and Android store
 // listings) from web-search evidence. Registry-claimed domains are passed to
 // the model as untrusted hints only; nothing is verified without a citation.
-export async function resolveCompetitorSurfaces({ competitor, chat, search, options } = {}) {
-  if (typeof chat !== 'function') throw new Error('resolveCompetitorSurfaces requires a chat(messages, { purpose }) function');
+export async function resolveCompetitorSurfaces({ competitor, chat, search, options }) {
+  if (typeof chat !== 'function') throw new Error('resolveCompetitorSurfaces requires a chat(messages, { purpose, responseFormat }) function');
   if (typeof search !== 'function') throw new Error('resolveCompetitorSurfaces requires a search(query) function');
   const maxQueries = optionalBound(options, 'maxQueries', 'resolveCompetitorSurfaces');
   const maxSearchTextBytes = optionalBound(options, 'maxSearchTextBytes', 'resolveCompetitorSurfaces');
@@ -95,40 +103,35 @@ export async function resolveCompetitorSurfaces({ competitor, chat, search, opti
     messages: [
       {
         role: 'system',
-        content: 'You plan web searches that locate a competitor\'s official web presence: its official website and its official iOS and Android application store listings. Return ONLY a JSON array of short search query strings a person would type. No prose, no markdown.',
+        content: 'You plan web searches that locate a competitor\'s official web presence: its official website and its official iOS and Android application store listings. Give short search queries a person would type.',
       },
-      { role: 'user', content: `${subject}\n\nReturn the JSON array of search queries.` },
+      { role: 'user', content: subject },
     ],
   });
-  if (queries === null) return { surfaces: [], queries: [], errors, status: 'unresolved' };
+  if (queries === null) return unresolved([], errors);
 
   const searchText = await gatherSearchText({ search, queries, maxSearchTextBytes, errors });
   if (!searchText) {
     errors.push({ stage: 'surface-resolution', error: 'no search evidence gathered; surface resolution skipped' });
-    return { surfaces: [], queries, errors, status: 'unresolved' };
+    return unresolved(queries, errors);
   }
 
-  let reply;
-  try {
-    reply = await chat([
+  const parsed = await askStage({
+    chat,
+    purpose: PURPOSE_SURFACE_RESOLUTION,
+    stage: 'surface-resolution',
+    format: SURFACES_FORMAT,
+    holds: (object) => Array.isArray(object.surfaces),
+    errors,
+    messages: [
       {
         role: 'system',
-        content: 'You resolve a competitor\'s official surfaces from raw web-search evidence. Identify the competitor\'s official website and its official iOS and Android application store listings using ONLY the search results provided. Return ONLY a JSON object {"surfaces":[{"kind":"website"|"ios_app"|"android_app","url":"...","evidence":"..."}]} where url is the surface itself and evidence is the search-result URL the claim came from, copied verbatim from the search results. Omit any surface the evidence does not establish. No prose, no markdown.',
+        content: 'You resolve a competitor\'s official surfaces from raw web-search evidence. Identify the competitor\'s official website and its official iOS and Android application store listings using ONLY the search results provided. For each, give its kind, the url of the surface itself, and as evidence the search-result URL the claim came from, copied verbatim from the search results. Omit any surface the evidence does not establish.',
       },
-      { role: 'user', content: `${subject}\n\nRaw search results:\n${searchText}\n\nReturn the JSON object of resolved surfaces with evidence citations.` },
-    ], { purpose: PURPOSE_SURFACE_RESOLUTION });
-  } catch (error) {
-    errors.push({ stage: 'surface-resolution', error: describeError(error) });
-    return { surfaces: [], queries, errors, status: 'unresolved' };
-  }
-
-  let parsed;
-  try {
-    parsed = parseJsonObjectStrict(reply, 'surface-resolution');
-  } catch (error) {
-    errors.push({ stage: 'surface-resolution', error: describeError(error) });
-    return { surfaces: [], queries, errors, status: 'unresolved' };
-  }
+      { role: 'user', content: `${subject}\n\nRaw search results:\n${searchText}` },
+    ],
+  });
+  if (parsed === null) return unresolved(queries, errors);
 
   const surfaces = normalizeSurfaces(parsed, searchText, errors);
   return {

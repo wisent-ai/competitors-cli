@@ -1,44 +1,70 @@
 import { createHash } from 'node:crypto';
+import { replyObject, schemaFormat, strictObject } from './adapters/answer.js';
 
 const PURPOSE_ROADMAP = 'competitor-roadmap';
-const DISPOSITIONS = new Set(['roadmap', 'no_action']);
-const PRIORITIES = new Set(['critical', 'high', 'medium', 'low']);
+// The kinds of item and the priorities a roadmap review gives, as its schema
+// admits them.
+const DISPOSITIONS = { roadmap: 'roadmap', no_action: 'no_action' };
+const PRIORITIES = { critical: 'critical', high: 'high', medium: 'medium', low: 'low' };
 
+/** `value` with its whitespace collapsed; the caller has checked it is text. */
 function clean(value) {
-  return String(value || '').replace(/\s+/gu, ' ').trim();
+  return value.replace(/\s+/gu, ' ').trim();
 }
 
 function optionalPositiveInteger(value, name) {
   if (value === undefined || value === null) return Infinity;
-  if (!Number.isInteger(value) || value <= 0) throw new Error(`${name} must be a positive integer, got ${value}`);
+  if (!Number.isInteger(value) || value <= Number()) throw new Error(`${name} must be a positive integer, got ${value}`);
   return value;
 }
 
+/** The distinct non-empty texts of a list the schema bound to strings. */
+function texts(list) {
+  return [...new Set(list.map(clean).filter(Boolean))];
+}
+
+// The review the model answers, bound as a strict JSON schema whose evidence
+// ids are only the catalog's own.
+function roadmapResponseFormat(evidenceIds) {
+  const text = { type: 'string' };
+  const list = { type: 'array', items: text };
+  const item = strictObject({
+    disposition: { type: 'string', enum: Object.values(DISPOSITIONS) },
+    priority: { type: 'string', enum: Object.values(PRIORITIES) },
+    title: text,
+    rationale: text,
+    impact: text,
+    proposedChange: text,
+    codeAreas: list,
+    acceptanceCriteria: list,
+    evidenceIds: { type: 'array', items: { type: 'string', enum: evidenceIds } },
+    competitors: list,
+  });
+  return schemaFormat('competitor_roadmap', { items: { type: 'array', items: item } });
+}
+
+/** The items of the model's review, which must be the competitor_roadmap object. */
 function parseReply(raw) {
-  const text = String(raw || '').trim().replace(/^```(?:json)?\s*/u, '').replace(/\s*```$/u, '');
-  const parsed = JSON.parse(text);
-  if (!Array.isArray(parsed)) throw new Error('roadmap reply must be a JSON array');
-  return parsed;
+  return replyObject(raw, PURPOSE_ROADMAP, 'competitor_roadmap', (object) => Array.isArray(object.items)).items;
 }
 
-function stringList(value) {
-  return [...new Set((Array.isArray(value) ? value : []).map(clean).filter(Boolean))];
-}
-
+// The evidence the model may cite, each entry with the id it cites it by. A
+// field its source does not hold is left out of the entry.
 function evidenceCatalog(sourceComparisons, observations) {
   const entries = [];
   for (const [comparisonIndex, comparison] of sourceComparisons.entries()) {
-    for (const [findingIndex, finding] of (Array.isArray(comparison?.findings) ? comparison.findings : []).entries()) {
+    if (!Array.isArray(comparison?.findings)) throw new Error(`source comparison ${comparisonIndex} holds no findings list`);
+    for (const [findingIndex, finding] of comparison.findings.entries()) {
       entries.push({
         id: `comparison:${comparisonIndex}:finding:${findingIndex}`,
         type: 'source_comparison',
-        competitor: clean(comparison?.competitor?.name),
-        capability: clean(finding?.capability),
-        assessment: clean(finding?.assessment),
-        summary: clean(finding?.summary),
-        limitations: stringList(finding?.limitations),
-        oursEvidenceIds: stringList(finding?.oursEvidenceIds),
-        theirsEvidenceIds: stringList(finding?.theirsEvidenceIds),
+        competitor: comparison.competitor?.name,
+        capability: finding?.capability,
+        assessment: finding?.assessment,
+        summary: finding?.summary,
+        limitations: finding?.limitations,
+        oursEvidenceIds: finding?.oursEvidenceIds,
+        theirsEvidenceIds: finding?.theirsEvidenceIds,
       });
     }
   }
@@ -46,11 +72,11 @@ function evidenceCatalog(sourceComparisons, observations) {
     entries.push({
       id: `observation:${index}`,
       type: 'market_observation',
-      competitor: clean(observation?.competitor?.name),
-      signalType: clean(observation?.signalType),
-      title: clean(observation?.title),
-      summary: clean(observation?.summary),
-      evidenceUrl: clean(observation?.evidenceUrl),
+      competitor: observation?.competitor?.name,
+      signalType: observation?.signalType,
+      title: observation?.title,
+      summary: observation?.summary,
+      evidenceUrl: observation?.evidenceUrl,
     });
   }
   return entries;
@@ -58,20 +84,32 @@ function evidenceCatalog(sourceComparisons, observations) {
 
 function stableId(productId, item) {
   const key = [productId, item.disposition, item.title, ...item.evidenceIds].join('\n').toLowerCase();
-  return `roadmap:${createHash('sha256').update(key).digest('hex').slice(0, 20)}`;
+  return `roadmap:${createHash('sha256').update(key).digest('hex')}`;
 }
 
-export async function generateCompetitorRoadmap({ product, sourceComparisons = [], observations = [], chat, options = {} } = {}) {
+/** An item turned to no action, with the work it proposed cleared. */
+function noAction(item) {
+  return { ...item, disposition: DISPOSITIONS.no_action, priority: PRIORITIES.low, proposedChange: '', codeAreas: [], acceptanceCriteria: [] };
+}
+
+/** The review a model that gave none ends in: no items, and the model's error said. */
+function modelFailure(entries, error) {
+  return { status: 'failed', items: [], evidence: entries, errors: [{ stage: 'model', error: error instanceof Error ? error.message : String(error) }] };
+}
+
+export async function generateCompetitorRoadmap({ product, sourceComparisons, observations, chat, options }) {
   if (typeof chat !== 'function') throw new Error('generateCompetitorRoadmap requires chat');
-  const maxRoadmapItems = optionalPositiveInteger(options.maxRoadmapItems, 'maxRoadmapItems');
+  if (typeof product?.id !== 'string') throw new Error('generateCompetitorRoadmap requires the product, with its id');
+  if (!Array.isArray(sourceComparisons)) throw new Error('generateCompetitorRoadmap requires sourceComparisons, a list (empty when there are none)');
+  if (!Array.isArray(observations)) throw new Error('generateCompetitorRoadmap requires observations, a list (empty when there are none)');
+  const maxRoadmapItems = optionalPositiveInteger(options?.maxRoadmapItems, 'maxRoadmapItems');
   const entries = evidenceCatalog(sourceComparisons, observations);
   if (!entries.length) return { status: 'no_evidence', items: [], evidence: [], errors: [] };
-  const validIds = new Set(entries.map((entry) => entry.id));
   const entryById = new Map(entries.map((entry) => [entry.id, entry]));
   const messages = [
     {
       role: 'system',
-      content: 'Turn competitor evidence into a product roadmap review. Return ONLY a JSON array: [{"disposition":"roadmap|no_action","priority":"critical|high|medium|low","title":"...","rationale":"...","impact":"...","proposedChange":"...","codeAreas":["..."],"acceptanceCriteria":["..."],"evidenceIds":["comparison:0:finding:0"],"competitors":["..."]}]. Use roadmap only when the evidence identifies a concrete gap or problem relevant to the product promise. Use no_action for a deliberate difference, an irrelevant feature, our existing advantage, or evidence too weak to justify work. Every item requires evidence. Do not invent implementation details, user demand, metrics, or code locations. Acceptance criteria must be observable and must not claim superiority unless evidence supplies a measurement.',
+      content: 'Turn competitor evidence into a product roadmap review. Use roadmap only when the evidence identifies a concrete gap or problem relevant to the product promise. Use no_action for a deliberate difference, an irrelevant feature, our existing advantage, or evidence too weak to justify work. Every item requires evidence, cited by the ids of the catalog. Do not invent implementation details, user demand, metrics, or code locations. Acceptance criteria must be observable and must not claim superiority unless evidence supplies a measurement. A no_action item leaves its proposed change empty and lists no code areas or acceptance criteria.',
     },
     {
       role: 'user',
@@ -80,52 +118,42 @@ export async function generateCompetitorRoadmap({ product, sourceComparisons = [
   ];
   let parsed;
   try {
-    parsed = parseReply(await chat(messages, { purpose: PURPOSE_ROADMAP }));
+    parsed = parseReply(await chat(messages, { purpose: PURPOSE_ROADMAP, responseFormat: roadmapResponseFormat([...entryById.keys()]) }));
   } catch (error) {
-    return { status: 'failed', items: [], evidence: entries, errors: [{ stage: 'model', error: clean(error?.message || error) }] };
+    return modelFailure(entries, error);
   }
   const items = [];
   const errors = [];
-  for (const raw of parsed) {
-    if (items.length >= maxRoadmapItems) break;
-    const evidenceIds = stringList(raw?.evidenceIds).filter((id) => validIds.has(id));
-    const title = clean(raw?.title);
-    const rationale = clean(raw?.rationale);
-    if (!title || !rationale || !evidenceIds.length) continue;
-    const disposition = DISPOSITIONS.has(raw?.disposition) ? raw.disposition : 'no_action';
-    const priority = PRIORITIES.has(raw?.priority) ? raw.priority : 'low';
-    const item = {
-      disposition,
-      priority,
-      title,
-      rationale,
-      impact: clean(raw?.impact),
-      proposedChange: disposition === 'roadmap' ? clean(raw?.proposedChange) : '',
-      codeAreas: disposition === 'roadmap' ? stringList(raw?.codeAreas) : [],
-      acceptanceCriteria: disposition === 'roadmap' ? stringList(raw?.acceptanceCriteria) : [],
-      evidenceIds,
-      competitors: stringList(raw?.competitors),
+  for (const raw of parsed.slice(Number(), maxRoadmapItems)) {
+    const proposed = {
+      disposition: raw.disposition,
+      priority: raw.priority,
+      title: clean(raw.title),
+      rationale: clean(raw.rationale),
+      impact: clean(raw.impact),
+      proposedChange: clean(raw.proposedChange),
+      codeAreas: texts(raw.codeAreas),
+      acceptanceCriteria: texts(raw.acceptanceCriteria),
+      evidenceIds: texts(raw.evidenceIds),
+      competitors: texts(raw.competitors),
     };
-    if (disposition === 'roadmap' && (!item.proposedChange || !item.acceptanceCriteria.length)) {
-      errors.push({ stage: 'validation', title, error: 'roadmap item missing proposed change or acceptance criteria' });
-      item.disposition = 'no_action';
-      item.priority = 'low';
-      item.proposedChange = '';
-      item.codeAreas = [];
-      item.acceptanceCriteria = [];
+    if (!proposed.title || !proposed.rationale || !proposed.evidenceIds.length) {
+      errors.push({ stage: 'validation', title: proposed.title, error: 'roadmap item has no title, rationale or cited evidence' });
+      continue;
     }
-    const cited = evidenceIds.map((id) => entryById.get(id)).filter(Boolean);
+    let item = proposed.disposition === DISPOSITIONS.roadmap ? proposed : noAction(proposed);
+    if (item.disposition === DISPOSITIONS.roadmap && (!item.proposedChange || !item.acceptanceCriteria.length)) {
+      errors.push({ stage: 'validation', title: item.title, error: 'roadmap item missing proposed change or acceptance criteria' });
+      item = noAction(item);
+    }
+    const cited = item.evidenceIds.map((id) => entryById.get(id));
     const sourceOnly = cited.every((entry) => entry.type === 'source_comparison');
     const supportsGap = cited.some((entry) => entry.assessment === 'theirs_better' || entry.assessment === 'different');
-    if (item.disposition === 'roadmap' && sourceOnly && !supportsGap) {
-      errors.push({ stage: 'validation', title, error: 'source evidence does not identify a competitor advantage or relevant difference' });
-      item.disposition = 'no_action';
-      item.priority = 'low';
-      item.proposedChange = '';
-      item.codeAreas = [];
-      item.acceptanceCriteria = [];
+    if (item.disposition === DISPOSITIONS.roadmap && sourceOnly && !supportsGap) {
+      errors.push({ stage: 'validation', title: item.title, error: 'source evidence does not identify a competitor advantage or relevant difference' });
+      item = noAction(item);
     }
-    items.push({ id: stableId(clean(product?.id), item), ...item });
+    items.push({ id: stableId(product.id, item), ...item });
   }
   return { status: errors.length ? 'partial' : 'complete', items, evidence: entries, errors };
 }

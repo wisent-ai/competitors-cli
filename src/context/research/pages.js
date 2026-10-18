@@ -1,37 +1,43 @@
 // Discover pages only within verified competitor surfaces.
 import { cleanNullable, cleanObject } from '../../competition/model.js';
-import { SURFACE_KINDS, cleanText, competitorBlock, describeError, gatherSearchText, normalizedHost, parsedHttpUrl, parseJsonObjectStrict, requestQueries, optionalBound } from './shared.js';
+import { strictObject, schemaFormat } from '../adapters/answer.js';
+import { SURFACE_KINDS, askStage, cleanText, competitorBlock, gatherSearchText, normalizedHost, parsedHttpUrl, requestQueries, optionalBound } from './shared.js';
 
 const PURPOSE_PAGE_QUERIES = 'competitor-page-queries';
 const PURPOSE_PAGE_SELECTION = 'competitor-page-selection';
 
+// The pages the model may select: each its URL, why it merits deep analysis,
+// and the role it plays on its surface, in the model's own words.
+const PAGES_FORMAT = schemaFormat('competitor_pages', {
+  pages: { type: 'array', items: strictObject({ url: { type: 'string' }, reason: { type: 'string' }, role: { type: 'string' } }) },
+});
+
+/** The stage's result when it ends without selecting a page. */
+function noPages(queries, errors) {
+  return { pages: [], queries, errors, status: 'no_pages_selected' };
+}
+
 function verifiedSurfaceList(surfaces) {
-  if (!Array.isArray(surfaces)) return [];
+  if (!Array.isArray(surfaces)) throw new Error('discoverCompetitorPages requires surfaces, a list (empty when none were resolved)');
   const out = [];
   for (const entry of surfaces) {
     if (!entry || typeof entry !== 'object' || entry.verified !== true) continue;
     const kind = cleanText(entry.kind).toLowerCase();
     if (!SURFACE_KINDS.has(kind)) continue;
-    let domain = cleanText(entry.domain).toLowerCase().replace(/^www\./u, '');
-    if (!domain) {
-      const url = parsedHttpUrl(entry.url);
-      if (url) domain = normalizedHost(url);
-    }
-    if (!domain) continue;
-    out.push({ kind, domain, url: cleanNullable(entry.url) });
+    const url = parsedHttpUrl(entry.url);
+    const domain = cleanText(entry.domain).toLowerCase().replace(/^www\./u, '');
+    const host = domain ? domain : url && normalizedHost(url);
+    if (!host) continue;
+    out.push({ kind, domain: host, url: cleanNullable(entry.url) });
   }
   return out;
 }
 
 function surfaceForHost(host, verified) {
-  return verified.find((surface) => host === surface.domain || host.endsWith(`.${surface.domain}`)) || null;
+  return verified.find((surface) => host === surface.domain || host.endsWith(`.${surface.domain}`));
 }
 
 function normalizePages(parsed, verified, maxPages, searchText, errors) {
-  if (!Array.isArray(parsed.pages)) {
-    errors.push({ stage: 'page-selection', reason: 'missing_pages_array', error: 'model reply object has no pages array' });
-    return [];
-  }
   const candidates = [];
   const seen = new Set();
   for (const entry of parsed.pages) {
@@ -41,7 +47,7 @@ function normalizePages(parsed, verified, maxPages, searchText, errors) {
     }
     const url = parsedHttpUrl(entry.url);
     if (!url) {
-      errors.push({ stage: 'page-validation', reason: 'invalid_url', error: `invalid or non-http(s) page url: ${cleanText(entry.url) || '(missing)'}; dropped` });
+      errors.push({ stage: 'page-validation', reason: 'invalid_url', error: `invalid or non-http(s) page url: ${JSON.stringify(entry.url)}; dropped` });
       continue;
     }
     const host = normalizedHost(url);
@@ -80,8 +86,8 @@ function normalizePages(parsed, verified, maxPages, searchText, errors) {
     else uncitedPages.push(candidate);
   }
   const ordered = [...citedPages, ...uncitedPages];
-  const pages = ordered.slice(0, maxPages);
-  for (const dropped of ordered.slice(maxPages)) {
+  const pages = ordered.filter((page, index) => index < maxPages);
+  for (const dropped of ordered.filter((page, index) => index >= maxPages)) {
     errors.push({ stage: 'page-validation', reason: 'page_budget', url: dropped.url, error: 'maxPages bound reached; dropped (cited pages take precedence)' });
   }
   return pages;
@@ -91,8 +97,8 @@ function normalizePages(parsed, verified, maxPages, searchText, errors) {
 // deep analysis. The model states each page's role in its own words; this
 // module enforces the evidence rules: verified domains, bounds, and recorded
 // search-evidence citation with cited-first selection under maxPages.
-export async function discoverCompetitorPages({ competitor, surfaces, chat, search, options } = {}) {
-  if (typeof chat !== 'function') throw new Error('discoverCompetitorPages requires a chat(messages, { purpose }) function');
+export async function discoverCompetitorPages({ competitor, surfaces, chat, search, options }) {
+  if (typeof chat !== 'function') throw new Error('discoverCompetitorPages requires a chat(messages, { purpose, responseFormat }) function');
   if (typeof search !== 'function') throw new Error('discoverCompetitorPages requires a search(query) function');
   const maxQueries = optionalBound(options, 'maxQueries', 'discoverCompetitorPages');
   const maxSearchTextBytes = optionalBound(options, 'maxSearchTextBytes', 'discoverCompetitorPages');
@@ -104,11 +110,11 @@ export async function discoverCompetitorPages({ competitor, surfaces, chat, sear
   const verified = verifiedSurfaceList(surfaces);
   if (!verified.length) {
     errors.push({ stage: 'surfaces', error: 'no verified surfaces provided; page discovery requires at least one verified surface' });
-    return { pages: [], queries: [], errors, status: 'no_pages_selected' };
+    return noPages([], errors);
   }
 
   const surfaceLines = verified
-    .map((surface) => `- ${surface.kind} ${surface.url || surface.domain} (domain: ${surface.domain})`)
+    .map((surface) => `- ${surface.kind} ${surface.url === null ? surface.domain : surface.url} (domain: ${surface.domain})`)
     .join('\n');
   const subject = `${competitorBlock(competitor)}\nVerified official surfaces:\n${surfaceLines}`;
 
@@ -121,40 +127,35 @@ export async function discoverCompetitorPages({ competitor, surfaces, chat, sear
     messages: [
       {
         role: 'system',
-        content: 'You plan web searches that surface individual pages on a competitor\'s verified official surfaces (website pages and application store listing pages) that are worth deep competitive analysis. Return ONLY a JSON array of short search query strings. No prose, no markdown.',
+        content: 'You plan web searches that surface individual pages on a competitor\'s verified official surfaces (website pages and application store listing pages) that are worth deep competitive analysis. Give short search queries.',
       },
-      { role: 'user', content: `${subject}\n\nReturn the JSON array of page-discovery search queries.` },
+      { role: 'user', content: subject },
     ],
   });
-  if (queries === null) return { pages: [], queries: [], errors, status: 'no_pages_selected' };
+  if (queries === null) return noPages([], errors);
 
   const searchText = await gatherSearchText({ search, queries, maxSearchTextBytes, errors });
   if (!searchText) {
     errors.push({ stage: 'page-selection', error: 'no search evidence gathered; page selection skipped' });
-    return { pages: [], queries, errors, status: 'no_pages_selected' };
+    return noPages(queries, errors);
   }
 
-  let reply;
-  try {
-    reply = await chat([
+  const parsed = await askStage({
+    chat,
+    purpose: PURPOSE_PAGE_SELECTION,
+    stage: 'page-selection',
+    format: PAGES_FORMAT,
+    holds: (object) => Array.isArray(object.pages),
+    errors,
+    messages: [
       {
         role: 'system',
-        content: 'You select pages worth deep competitive analysis from raw web-search evidence. Prefer page URLs that literally appear in the search results; every URL must belong to the competitor\'s verified official surfaces, and URLs absent from the evidence are deprioritized when the page budget binds. Return ONLY a JSON object {"pages":[{"url":"...","reason":"...","role":"..."}]} where reason explains why the page merits deep analysis and role states, in your own words, what role that page plays on the surface. No prose, no markdown.',
+        content: 'You select pages worth deep competitive analysis from raw web-search evidence. Prefer page URLs that literally appear in the search results; every URL must belong to the competitor\'s verified official surfaces, and URLs absent from the evidence are deprioritized when the page budget binds. For each page give its url, the reason it merits deep analysis, and the role, in your own words, it plays on the surface.',
       },
-      { role: 'user', content: `${subject}\n\nRaw search results:\n${searchText}\n\nReturn the JSON object of selected pages.` },
-    ], { purpose: PURPOSE_PAGE_SELECTION });
-  } catch (error) {
-    errors.push({ stage: 'page-selection', error: describeError(error) });
-    return { pages: [], queries, errors, status: 'no_pages_selected' };
-  }
-
-  let parsed;
-  try {
-    parsed = parseJsonObjectStrict(reply, 'page-selection');
-  } catch (error) {
-    errors.push({ stage: 'page-selection', error: describeError(error) });
-    return { pages: [], queries, errors, status: 'no_pages_selected' };
-  }
+      { role: 'user', content: `${subject}\n\nRaw search results:\n${searchText}` },
+    ],
+  });
+  if (parsed === null) return noPages(queries, errors);
 
   const pages = normalizePages(parsed, verified, maxPages, searchText, errors);
   return { pages, queries, errors, status: pages.length ? 'resolved' : 'no_pages_selected' };

@@ -1,5 +1,76 @@
-import { readFile, rename, writeFile } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { lstat, open, readFile, realpath, rename, unlink } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { createRequire } from 'node:module'
+import { basename, dirname, join, resolve } from 'node:path'
 import { normalizeCompetitor, slugify } from './model.js'
+
+const require = createRequire(import.meta.url)
+const registryMode = constants.S_IRUSR | constants.S_IWUSR
+
+function combined(previous, error) {
+  return previous
+    ? new AggregateError([previous, error], `${previous.message}; ${error.message}`)
+    : error
+}
+
+async function canonicalRegistry(path) {
+  try {
+    return await realpath(path)
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+    // A broken symlink is not an absent registry: do not replace the link.
+    try {
+      await lstat(path)
+    } catch (inspection) {
+      if (inspection.code !== 'ENOENT') throw inspection
+      return join(await realpath(dirname(resolve(path))), basename(path))
+    }
+    throw error
+  }
+}
+
+async function mutateRegistry(path, change) {
+  let flock
+  try {
+    flock = require('fs-ext').flock
+  } catch (error) {
+    throw new Error(`competitor registry ${path} requires the fs-ext native locking dependency: ${error.message}`, { cause: error })
+  }
+  let target
+  let handle
+  try {
+    target = await canonicalRegistry(path)
+    handle = await open(`${target}.lock`, 'a', registryMode)
+  } catch (error) {
+    throw new Error(`competitor registry ${path}: opening mutation lock: ${error.message}`, { cause: error })
+  }
+  let result
+  let failure
+  let committed = false
+  try {
+    await new Promise((accept, refuse) => {
+      flock(handle.fd, 'exnb', (error) => error ? refuse(error) : accept())
+    })
+    const registry = await readRegistry(target)
+    result = change(registry)
+    await writeRegistry(target, registry)
+    committed = true
+  } catch (error) {
+    failure = error
+  }
+  try {
+    // Keep the carrier inode: unlinking it could split concurrent owners.
+    // Closing the descriptor releases the OS lock, including on process exit.
+    await handle.close()
+  } catch (error) {
+    failure = combined(failure, new Error(`closing mutation lock: ${error.message}`, { cause: error }))
+  }
+  if (failure) {
+    throw new Error(`competitor registry ${path}, lock ${target}.lock, committed=${committed}: ${failure.message}`, { cause: failure })
+  }
+  return result
+}
 
 // The competitors a comparison or a discovery run is measured against live in
 // one JSON file the CLI owns, {"competitors": [...]}, named by --registry or
@@ -36,9 +107,34 @@ export async function readRegistry(path) {
 }
 
 async function writeRegistry(path, registry) {
-  const pending = `${path}.pending`
-  await writeFile(pending, `${JSON.stringify(registry, null, 2)}\n`, { mode: 0o600 })
-  await rename(pending, path)
+  const pending = `${path}.pending-${randomUUID()}`
+  const handle = await open(pending, 'wx', registryMode)
+  let failure
+  try {
+    await handle.writeFile(`${JSON.stringify(registry, null, 2)}\n`)
+    await handle.sync()
+  } catch (error) {
+    failure = error
+  }
+  try {
+    await handle.close()
+  } catch (error) {
+    failure = combined(failure, error)
+  }
+  if (!failure) {
+    try {
+      await rename(pending, path)
+      return
+    } catch (error) {
+      failure = error
+    }
+  }
+  try {
+    await unlink(pending)
+  } catch (error) {
+    failure = combined(failure, error)
+  }
+  throw new Error(`writing competitor registry ${path} through ${pending}: ${failure.message}`, { cause: failure })
 }
 
 function find(registry, id, path) {
@@ -57,28 +153,28 @@ export async function showCompetitor(path, id) {
 }
 
 export async function addCompetitor(path, input) {
-  const registry = await readRegistry(path)
-  const competitor = normalizeCompetitor(input)
-  if (registry.competitors.some((existing) => existing.id === competitor.id)) {
-    throw new Error(`competitor ${competitor.id} is already in ${path}; change it with competitors registry edit ${competitor.id}`)
-  }
-  registry.competitors.push(competitor)
-  await writeRegistry(path, registry)
-  return competitor
+  return mutateRegistry(path, (registry) => {
+    const competitor = normalizeCompetitor(input)
+    if (registry.competitors.some((existing) => existing.id === competitor.id)) {
+      throw new Error(`competitor ${competitor.id} is already in ${path}; change it with competitors registry edit ${competitor.id}`)
+    }
+    registry.competitors.push(competitor)
+    return competitor
+  })
 }
 
 export async function editCompetitor(path, id, changes) {
-  const registry = await readRegistry(path)
-  const index = find(registry, id, path)
-  const changed = normalizeCompetitor({ ...registry.competitors[index], ...changes, id: registry.competitors[index].id })
-  registry.competitors[index] = changed
-  await writeRegistry(path, registry)
-  return changed
+  return mutateRegistry(path, (registry) => {
+    const index = find(registry, id, path)
+    const changed = normalizeCompetitor({ ...registry.competitors[index], ...changes, id: registry.competitors[index].id })
+    registry.competitors[index] = changed
+    return changed
+  })
 }
 
 export async function removeCompetitor(path, id) {
-  const registry = await readRegistry(path)
-  const [removed] = registry.competitors.splice(find(registry, id, path), 1)
-  await writeRegistry(path, registry)
-  return removed
+  return mutateRegistry(path, (registry) => {
+    const [removed] = registry.competitors.splice(find(registry, id, path), 1)
+    return removed
+  })
 }

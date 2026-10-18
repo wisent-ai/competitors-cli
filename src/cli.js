@@ -75,11 +75,14 @@ const TAKES_ID = new Set(['registry show', 'registry edit', 'registry remove'])
 
 function refuseUnknown(command, args, start) {
   const known = FLAGS[command]
+  const seen = new Set()
   for (let index = start; index < args.length; index += 1) {
     const arg = args[index]
     if (!known.includes(arg)) throw new UsageError(`competitors ${command} does not take ${arg}; it takes ${known.join(', ')}\n\n${usage()}`)
+    if (seen.has(arg) && arg !== '--own-domain') throw new UsageError(`${arg} may be supplied only once\n\n${usage()}`)
+    seen.add(arg)
     if (VALUED.has(arg)) {
-      if (index + 1 >= args.length) throw new UsageError(`${arg} needs a value\n\n${usage()}`)
+      if (index + 1 >= args.length || args[index + 1].startsWith('--')) throw new UsageError(`${arg} needs a value\n\n${usage()}`)
       index += 1
     }
   }

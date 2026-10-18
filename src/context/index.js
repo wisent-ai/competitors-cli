@@ -1,4 +1,5 @@
 export * from './adapters/headers.js';
+export * from './adapters/answer.js';
 export * from './adapters/brama.js';
 export * from './adapters/probierz.js';
 export * from './research/index.js';
