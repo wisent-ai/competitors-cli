@@ -58,7 +58,7 @@ try {
   failure = declared('COMPETITORS_TEST_FAILURE_EXIT');
   report.source = await sourceState();
   report.status = 'running';
-  const result = await command(process.execPath, ['--test', '--test-reporter=tap', 'tests/context/source.test.mjs']);
+  const result = await command(process.execPath, ['--test', '--test-reporter=tap', 'tests/context/source.test.mjs', 'tests/context/gathering.test.mjs']);
   await writeFile(join(directory, 'tests.tap'), result.stdout);
   await writeFile(join(directory, 'tests.stderr'), result.stderr);
   process.stdout.write(result.stdout);

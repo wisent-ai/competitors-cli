@@ -229,8 +229,11 @@ and `gathering/` owns capture orchestration. Observation conversion stays
 separate from those collection steps.
 
 Run `npm test` for the public source catalog's full-input, Unicode byte-boundary,
-file-omission and invalid-bound behavior, with `COMPETITORS_TEST_SUCCESS_EXIT`
-and `COMPETITORS_TEST_FAILURE_EXIT` declared as below. Reports under `.build/source-evidence`
+file-omission and invalid-bound behavior, and for context gathering over the
+real Brama adapter against an HTTP gateway on this machine: content-less
+answers, replies without a usable JSON object, a usable reply and a competitor
+with no capture. Declare `COMPETITORS_TEST_SUCCESS_EXIT` and
+`COMPETITORS_TEST_FAILURE_EXIT` as below. Reports under `.build/source-evidence`
 retain the source revision and patches, commands, exits and TAP output; a source
 change during execution refuses qualification. These tests do not claim a live
 model, search, browser or application GUI run.
