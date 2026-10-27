@@ -7,13 +7,17 @@ import { CONTEXT_SURFACE_KINDS, cleanText } from './gathering/captures.js';
 // Map a gathered context result into competition observations so it flows into
 // the existing competition tracker and summaries. Positioning, differentiation
 // and target audience become positioning signals; pricing a pricing signal;
-// each key feature a feature signal.
+// each key feature a feature signal. The caller names the source type the
+// context was gathered from; without it the mapping refuses.
 export function contextToObservations(contextResult, options = {}) {
   const context = contextResult?.context;
   if (!context) return [];
+  if (!options.sourceType) {
+    throw new Error('contextToObservations needs options.sourceType, the competitor source the context was gathered from');
+  }
   const base = {
     competitor: contextResult.competitor,
-    sourceType: options.sourceType ? options.sourceType : COMPETITOR_SOURCE_TYPES.WEBSITE,
+    sourceType: options.sourceType,
     observedAt: options.observedAt,
     region: options.region,
   };
@@ -34,7 +38,10 @@ export function contextToObservations(contextResult, options = {}) {
 // map onto the closest signal types (funnel onboarding, seo seo, pricing and
 // offers pricing, promotions ads, page structure feature, style and design
 // system positioning); the source type follows the surface kind of the first
-// valid evidence reference (website, app_store, play_store).
+// cited evidence the index holds (website, app_store, play_store). Analysis
+// keeps only findings that cite the catalog, so a finding citing nothing the
+// index holds, or evidence of a surface kind with no source type, is refused
+// naming it rather than recorded as a website observation.
 const DEEP_SIGNAL_FOR_AREA = {
   [DEEP_ANALYSIS_AREAS.STYLE]: COMPETITOR_SIGNAL_TYPES.POSITIONING,
   [DEEP_ANALYSIS_AREAS.DESIGN_SYSTEM]: COMPETITOR_SIGNAL_TYPES.POSITIONING,
@@ -55,28 +62,45 @@ const DEEP_SOURCE_FOR_SURFACE = {
 export function deepAnalysisToObservations(deepResult, options = {}) {
   const areas = deepResult?.deep?.areas;
   if (!areas) return [];
-  const evidenceIndex = deepResult.evidenceIndex && typeof deepResult.evidenceIndex === 'object' ? deepResult.evidenceIndex : {};
+  const competitorName = deepResult.competitor?.name;
+  const evidenceIndex = deepResult.evidenceIndex;
+  if (!evidenceIndex || typeof evidenceIndex !== 'object') {
+    throw new Error(`deep analysis of ${competitorName} carries areas but no evidence index`);
+  }
   const observations = [];
   for (const [area, areaResult] of Object.entries(areas)) {
     const signalType = DEEP_SIGNAL_FOR_AREA[area];
-    if (!signalType) continue;
-    const findings = Array.isArray(areaResult?.findings) ? areaResult.findings : [];
-    for (const finding of findings) {
+    // Every analysis area maps to a signal type; findings of an area outside
+    // that map are refused naming it, never dropped from the observations.
+    if (!signalType) {
+      throw new Error(`deep analysis area ${area} maps to no competitor signal type`);
+    }
+    if (!Array.isArray(areaResult?.findings)) {
+      throw new Error(`deep analysis of ${competitorName} area ${area} carries no findings list`);
+    }
+    for (const finding of areaResult.findings) {
       const summary = cleanText(finding?.summary);
       if (!summary) continue;
       const evidenceIds = cleanStringArray(finding?.evidenceIds);
-      const firstEvidenceId = evidenceIds.find((id) => evidenceIndex[id]) || null;
-      const evidence = firstEvidenceId ? evidenceIndex[firstEvidenceId] : null;
+      const firstEvidenceId = evidenceIds.find((id) => evidenceIndex[id]);
+      if (!firstEvidenceId) {
+        throw new Error(`deep analysis of ${competitorName} area ${area} finding "${summary}" cites ${JSON.stringify(evidenceIds)}, none of which the evidence index holds, so its source is unknown`);
+      }
+      const evidence = evidenceIndex[firstEvidenceId];
+      const sourceType = DEEP_SOURCE_FOR_SURFACE[evidence.surfaceKind];
+      if (!sourceType) {
+        throw new Error(`evidence ${firstEvidenceId} of ${competitorName} names surface kind ${evidence.surfaceKind}, which maps to no competitor source type`);
+      }
       observations.push(normalizeCompetitorObservation({
         competitor: deepResult.competitor,
         signalType,
-        sourceType: (evidence && DEEP_SOURCE_FOR_SURFACE[evidence.surfaceKind]) || options.sourceType || COMPETITOR_SOURCE_TYPES.WEBSITE,
+        sourceType,
         observedAt: options.observedAt,
         region: options.region,
-        surface: evidence ? evidence.surfaceKind : null,
+        surface: evidence.surfaceKind,
         productArea: area,
-        url: evidence ? evidence.url : null,
-        evidenceUrl: evidence ? evidence.url : null,
+        url: evidence.url,
+        evidenceUrl: evidence.url,
         evidenceId: firstEvidenceId,
         summary,
         confidence: finding?.confidence,

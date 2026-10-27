@@ -55,7 +55,11 @@ node src/cli.js registry add --competitor alternative.json
 node src/cli.js registry list
 ```
 
-`alternative.json` is one competitor record, `{"name": "Alternative", "domains": ["alternative.example"]}`. The registry file starts empty and changes only through `registry add`, `registry edit <id> --competitor <changes.json>` and `registry remove <id>`; `registry show <id>` reads one record. A missing registry name is refused with `no competitor registry is named: pass --registry <file> or set COMPETITORS_REGISTRY`, an unknown id names the ids the file holds, and adding an id twice is refused.
+`alternative.json` is one competitor record, `{"name": "Alternative", "domains": ["alternative.example"]}`. The registry file starts empty and changes only through `registry add`, `registry import --competitors <competitors.json>`, `registry edit <id> --competitor <changes.json>` and `registry remove <id>`; `registry show <id>` reads one record. A missing registry name is refused with `no competitor registry is named: pass --registry <file> or set COMPETITORS_REGISTRY`, an unknown id names the ids the file holds, and adding an id twice is refused.
+
+`registry import` takes an array or `{"competitors": [...]}` and adds every record in one locked write, or none: when the file names an id twice or an id the registry already holds, it exits 1 with `import refused, nothing was added: <ids> already in <registry> or named twice in the file; change held ones with competitors registry edit`, and the registry is unchanged. Its answer is `{"registry", "added": [...]}`.
+
+`registry list` and `compare --registry` narrow the competitors with `--tag <tag>` and `--region <region>` (both repeat; a competitor carrying any one of them stays), `--category <productCategory>`, and `--active` or `--inactive`; matching ignores case. A filtered list answers `{"registry", "filter", "held", "competitors"}`, where `filter` describes the criteria and `held` counts the registry. `--active` with `--inactive` is a usage error (exit 2); `compare` refuses filters with `--competitors <file>` (exit 2) and, when no registry competitor matches, exits 1 naming the filter and how many the registry holds.
 
 Registry add, edit and remove hold one nonblocking OS lock across the complete
 read-modify-write operation. Symlink aliases resolve to the same target and
@@ -103,16 +107,22 @@ node src/cli.js compare --product ours.json --registry "$COMPETITORS_REGISTRY" -
 
 `compare` takes exactly one of the two, and refuses an empty registry. `discover --registry <file>` deduplicates against the registered competitors; without it nothing is assumed to be known.
 
+`discover` keeps a stated zero: a record whose ad, install or review count is
+zero has that count, not an unknown one. A record naming no `sourceType` is
+internal research and one naming no region is `GLOBAL`; a `sourceType` the
+competition model does not know is refused with the known types, never filed as
+internal research.
+
 Unknown flags, missing option values (including another flag in place of the
 value), and duplicate singleton options are usage errors with exit status 2.
-`--own-domain` may repeat to declare multiple owned domains. `--help` and `-h`
+`--own-domain`, `--tag` and `--region` may repeat. `--help` and `-h`
 work at every command depth.
 
 ## Primary interfaces
 
 | Interface | Contract |
 |---|---|
-| `competitors registry list\|show\|add\|edit\|remove` | the registry file the CLI owns |
+| `competitors registry list\|show\|add\|import\|edit\|remove` | the registry file the CLI owns; `list` filters by tag, region, category and state |
 | `competitors discover` | normalize and deduplicate caller-supplied discovery records |
 | `competitors compare` | generate a feature and pricing matrix from explicit product records |
 | `@wisent-ai/competitors-cli` | identities, observations, discovery, context, and comparison APIs |
@@ -149,6 +159,13 @@ Catalog `coverage` retains the declared limits and whether all supplied evidence
 survived. Source comparisons return `partial` when those catalogs lost evidence
 or `maxSourceFindings` left model items unprocessed; `coverage.unprocessedFindings`
 counts the unexamined items, not a claimed number of valid omitted findings.
+
+The Probierz adapter's `scrapeSurface` throws, and the gathering flow records
+as a surface error, a surface of a kind Probierz does not capture, a run
+Probierz returned empty or skipped, a run with no report path, and a
+screenshot named relative to a run that reported no artifacts directory. An
+unreadable screenshot stays in the capture with `omittedReason:
+"image_read_error"` and the read error's message.
 
 `analyzeSourceComparison` asks the injected `chat` for a strict `json_schema`
 named `source_findings`: `findings`, each a `capability`, an `assessment`

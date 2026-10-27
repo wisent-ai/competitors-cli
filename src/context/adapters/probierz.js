@@ -18,12 +18,20 @@ import { isAbsolute, resolve } from 'node:path';
 // caller may bound it with maxStructuredBytes; without a bound it is kept
 // whole. Without that module, structured capture is skipped entirely and the
 // capture shape is unchanged.
+//
+// A surface probierz cannot capture is thrown with its cause, so the gathering
+// flow records it among the surface errors instead of losing it unseen.
 
 const TARGET_FOR_KIND = {
   website: 'web',
   ios_app: 'web',
   android_app: 'web',
 };
+
+// The words a thrown value carries: an Error's message, anything else as text.
+function errorText(error) {
+  return error instanceof Error ? error.message : String(error);
+}
 
 function envForSurface(surface) {
   return { BASE_URL: surface.target };
@@ -35,8 +43,19 @@ function toDataUrl(image, contentType) {
   return `data:${mime};base64,${encoded}`;
 }
 
+// A screenshot the report names relative to the run's artifacts directory; a
+// relative name with no artifacts directory is refused, never resolved against
+// whatever directory this process happens to run in.
 function artifactPath(file, artifactsDir) {
-  return isAbsolute(file) ? file : resolve(artifactsDir || '.', file);
+  if (isAbsolute(file)) return file;
+  if (typeof artifactsDir !== 'string' || artifactsDir === '') {
+    throw new Error(`probierz named screenshot ${file} relative to a run that reported no artifacts directory`);
+  }
+  return resolve(artifactsDir, file);
+}
+
+function unreadImage(evidence, error) {
+  return { ...evidence, embedded: false, omittedReason: 'image_read_error', error: errorText(error) };
 }
 
 function screenshotsFromAnalysis(analysis, options) {
@@ -55,12 +74,7 @@ function screenshotsFromAnalysis(analysis, options) {
     try {
       image = readFileSync(path);
     } catch (error) {
-      return {
-        ...evidence,
-        embedded: false,
-        omittedReason: 'image_read_error',
-        error: String(error?.message || error),
-      };
+      return unreadImage(evidence, error);
     }
     if (image.byteLength > options.maxImageBytes) {
       return { ...evidence, embedded: false, byteLength: image.byteLength, omittedReason: 'image_size_limit' };
@@ -87,25 +101,26 @@ function resolveExtractStructured(extractStructuredModule, config) {
   throw new Error('extractStructuredModule must export createExtractStructured(config) or extractStructured(analysis, run, surface, competitor)');
 }
 
+function structuredRefused(reason) {
+  return { structured: null, structuredError: reason };
+}
+
 function boundedStructured(value, maxStructuredBytes) {
   if (!value || typeof value !== 'object') {
-    return { structured: null, structuredError: 'structured extractor must return a JSON-serializable object' };
+    return structuredRefused('structured extractor must return a JSON-serializable object');
   }
   let serialized;
   try {
     serialized = JSON.stringify(value);
   } catch (error) {
-    return { structured: null, structuredError: String(error?.message || error) };
+    return structuredRefused(errorText(error));
   }
   if (typeof serialized !== 'string') {
-    return { structured: null, structuredError: 'structured extractor returned an object that does not serialize to JSON' };
+    return structuredRefused('structured extractor returned an object that does not serialize to JSON');
   }
   const byteLength = Buffer.byteLength(serialized, 'utf8');
   if (byteLength > maxStructuredBytes) {
-    return {
-      structured: null,
-      structuredError: `structured payload of ${byteLength} bytes exceeds the ${maxStructuredBytes} byte bound`,
-    };
+    return structuredRefused(`structured payload of ${byteLength} bytes exceeds the ${maxStructuredBytes} byte bound`);
   }
   return { structured: value, structuredError: null };
 }
@@ -134,9 +149,13 @@ export function createProbierzScraper(options = {}) {
 
   return async function scrapeSurface(surface, competitor) {
     const target = TARGET_FOR_KIND[surface.kind];
-    if (!target) return null;
+    if (!target) {
+      throw new Error(`probierz captures no surface of kind ${surface.kind} (${surface.target})`);
+    }
     const run = await runSurface(target, { env: envForSurface(surface), record: true, ...runOptions });
-    if (!run || run.skipped || !run.reportPath) return null;
+    if (!run) throw new Error(`probierz returned no run for ${surface.target}`);
+    if (run.skipped) throw new Error(`probierz skipped the ${target} run for ${surface.target}`);
+    if (!run.reportPath) throw new Error(`probierz ran ${surface.target} but reported no report path`);
     const analysis = analyzeRun({ reportPath: run.reportPath, artifactsDir: run.artifactsDir, tool: run.tool });
     let text = '';
     let textError = null;
@@ -144,7 +163,7 @@ export function createProbierzScraper(options = {}) {
       try {
         text = await extractText(analysis, run, surface, competitor);
       } catch (error) {
-        textError = String(error?.message || error);
+        textError = errorText(error);
       }
     }
     let structured = null;
@@ -154,7 +173,7 @@ export function createProbierzScraper(options = {}) {
         const value = await extractStructured(analysis, run, surface, competitor);
         ({ structured, structuredError } = boundedStructured(value, maxStructuredBytes));
       } catch (error) {
-        structuredError = String(error?.message || error);
+        structuredError = errorText(error);
       }
     }
     const capture = {

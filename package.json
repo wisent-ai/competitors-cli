@@ -21,16 +21,16 @@
       "default": "./src/context/index.js"
     },
     "./discovery": "./src/discovery/index.js",
-    "./crawl": "./src/crawl.js",
+    "./crawl": {
+      "types": "./src/types/crawl.d.ts",
+      "default": "./src/crawl.js"
+    },
     "./comparison": "./src/comparison.js"
   },
-  "files": [
-    "src",
-    "LICENSE"
-  ],
   "scripts": {
     "test": "node tests/context/run.mjs",
     "test:registry": "sh tests/registry/registry.sh",
+    "test:registry:import": "sh tests/registry/import.sh",
     "test:registry:concurrency": "node tests/registry/concurrency.mjs"
   },
   "engines": {

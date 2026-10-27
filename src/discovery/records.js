@@ -27,16 +27,28 @@ function firstSegment(value, separator) {
   return head;
 }
 
+// The host a URL names. A value that does not parse as a URL is read as a bare
+// host, optionally followed by a path, which is how records often state one.
 function hostFromUrl(value) {
   const raw = clean(value);
   if (!raw) return '';
-  try {
-    return new URL(raw).hostname.replace(/^www\./u, '').toLowerCase();
-  } catch {
-    const stripped = raw.replace(/^https?:\/\//u, '');
-    return firstSegment(stripped, '/').replace(/^www\./u, '').toLowerCase();
-  }
+  if (URL.canParse(raw)) return new URL(raw).hostname.replace(/^www\./u, '').toLowerCase();
+  const stripped = raw.replace(/^https?:\/\//u, '');
+  return firstSegment(stripped, '/').replace(/^www\./u, '').toLowerCase();
 }
+
+// A count or score the record states under any of its names, or null when it
+// states none. Null, undefined and empty text state nothing; a stated zero
+// stays zero, never passed over to the next name or read as absent.
+function statedNumber(...values) {
+  const value = values.find((candidate) => candidate !== undefined && candidate !== null && candidate !== '');
+  if (value === undefined) return null;
+  return numberOrNull(value);
+}
+
+// A record that names no market is about the global one, the market the
+// competitor model gives a competitor that names no region.
+const UNSTATED_REGION = 'GLOBAL';
 
 function domainFromRecord(record) {
   const explicit = clean(record.domain || record.websiteDomain || record.host).replace(/^www\./u, '').toLowerCase();
@@ -47,11 +59,15 @@ function domainFromRecord(record) {
   return STORE_HOSTS.has(evidenceHost) ? '' : evidenceHost;
 }
 
+// The record's source type. A record that names none is the team's own
+// research; one that names a type this model does not know is refused.
 export function normalizeSourceType(value) {
-  const sourceType = clean(value || COMPETITOR_SOURCE_TYPES.INTERNAL_RESEARCH);
-  return Object.values(COMPETITOR_SOURCE_TYPES).includes(sourceType)
-    ? sourceType
-    : COMPETITOR_SOURCE_TYPES.INTERNAL_RESEARCH;
+  const stated = clean(value);
+  if (!stated) return COMPETITOR_SOURCE_TYPES.INTERNAL_RESEARCH;
+  if (!Object.values(COMPETITOR_SOURCE_TYPES).includes(stated)) {
+    throw new Error(`Discovery record source type ${stated} is not one of ${Object.values(COMPETITOR_SOURCE_TYPES).join(', ')}`);
+  }
+  return stated;
 }
 
 export function canonicalCandidateKey(record) {
@@ -85,40 +101,45 @@ export function normalizeDiscoveryRecord(input = {}) {
   if (!name && !domain) {
     throw new Error('Discovery record requires name/title or domain/url');
   }
+  const statedId = cleanNullable(input.recordId || input.id);
+  const recordId = statedId !== null ? statedId : `disc:${stableHash({
+    sourceType,
+    name,
+    company,
+    domain,
+    url,
+    query: input.query,
+    observedDay: dayKey(observedAt),
+  })}`;
+  const region = cleanNullable(input.region || input.country);
+  const language = cleanNullable(input.language);
 
   return {
-    recordId: cleanNullable(input.recordId || input.id) || `disc:${stableHash({
-      sourceType,
-      name,
-      company,
-      domain,
-      url,
-      query: input.query,
-      observedDay: dayKey(observedAt),
-    })}`,
+    recordId,
     sourceType,
     observedAt,
     query: cleanNullable(input.query || input.keyword),
-    region: clean(input.region || input.country || 'global').toUpperCase(),
-    language: clean(input.language || '').toLowerCase() || null,
-    rank: numberOrNull(input.rank || input.position || input.searchRank),
+    region: region ? region.toUpperCase() : UNSTATED_REGION,
+    language: language && language.toLowerCase(),
+    rank: statedNumber(input.rank, input.position, input.searchRank),
     name: name || domain,
     company,
     description: cleanNullable(input.description || input.summary || input.subtitle),
     url,
-    domain: domain || null,
+    // domainFromRecord answers the empty string for a record naming no domain.
+    domain: domain === '' ? null : domain,
     appStoreId: cleanNullable(input.appStoreId || input.trackId),
     playStorePackage: cleanNullable(input.playStorePackage || input.packageName || input.appId),
-    rating: numberOrNull(input.rating || input.averageUserRating || input.score),
-    reviewCount: numberOrNull(input.reviewCount || input.userRatingCount || input.ratings),
-    installCount: numberOrNull(input.installCount || input.installs),
-    adCount: numberOrNull(input.adCount || input.ads),
-    traffic: numberOrNull(input.traffic || input.visits),
-    keywords: cleanStringArray(input.keywords || []),
-    tags: cleanStringArray(input.tags || []),
+    rating: statedNumber(input.rating, input.averageUserRating, input.score),
+    reviewCount: statedNumber(input.reviewCount, input.userRatingCount, input.ratings),
+    installCount: statedNumber(input.installCount, input.installs),
+    adCount: statedNumber(input.adCount, input.ads),
+    traffic: statedNumber(input.traffic, input.visits),
+    keywords: cleanStringArray(input.keywords),
+    tags: cleanStringArray(input.tags),
     productCategory: cleanNullable(input.productCategory || input.category),
     evidenceUrl: cleanNullable(input.evidenceUrl || url),
-    attributes: cleanObject(input.attributes || {}),
+    attributes: cleanObject(input.attributes),
   };
 }
 

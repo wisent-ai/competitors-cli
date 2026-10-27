@@ -163,6 +163,27 @@ export async function addCompetitor(path, input) {
   })
 }
 
+// Many competitors in one locked write. Every record is normalized and checked
+// before anything changes, so a file naming one id twice, or an id the registry
+// already holds, is refused with every such id and the registry stays as it was.
+export async function importCompetitors(path, inputs) {
+  return mutateRegistry(path, (registry) => {
+    const incoming = inputs.map(normalizeCompetitor)
+    const held = new Set(registry.competitors.map((competitor) => competitor.id))
+    const seen = new Set()
+    const clashes = new Set()
+    for (const competitor of incoming) {
+      if (held.has(competitor.id) || seen.has(competitor.id)) clashes.add(competitor.id)
+      seen.add(competitor.id)
+    }
+    if (clashes.size) {
+      throw new Error(`import refused, nothing was added: ${[...clashes].join(', ')} already in ${path} or named twice in the file; change held ones with competitors registry edit`)
+    }
+    registry.competitors.push(...incoming)
+    return incoming
+  })
+}
+
 export async function editCompetitor(path, id, changes) {
   return mutateRegistry(path, (registry) => {
     const index = find(registry, id, path)
@@ -174,7 +195,9 @@ export async function editCompetitor(path, id, changes) {
 
 export async function removeCompetitor(path, id) {
   return mutateRegistry(path, (registry) => {
-    const [removed] = registry.competitors.splice(find(registry, id, path), 1)
+    const index = find(registry, id, path)
+    const removed = registry.competitors[index]
+    registry.competitors = registry.competitors.filter((_, at) => at !== index)
     return removed
   })
 }
