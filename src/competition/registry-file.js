@@ -30,7 +30,7 @@ async function canonicalRegistry(path) {
   }
 }
 
-async function mutateRegistry(path, change) {
+export async function mutateRegistry(path, change) {
   let flock
   try {
     flock = require('fs-ext').flock
@@ -73,10 +73,12 @@ async function mutateRegistry(path, change) {
 }
 
 // The competitors a comparison or a discovery run is measured against live in
-// one JSON file the CLI owns, {"competitors": [...]}, named by --registry or
-// COMPETITORS_REGISTRY. Nothing is compiled in: a registry starts empty and
-// changes only through add, edit and remove, so the list a run used is the
-// file it read.
+// one JSON file the CLI owns, {"competitors": [...], "observations": [...],
+// "mappings": [...]}, named by --registry or COMPETITORS_REGISTRY. Nothing is
+// compiled in: a registry starts empty and changes only through the CLI's
+// verbs, so the list a run used is the file it read. Observations are the
+// dated time series of each competitor; a mapping says which of our products
+// meets it (`competitors observation`, `competitors mapping`).
 
 export function registryPath(explicit, env = process.env) {
   const path = explicit || env.COMPETITORS_REGISTRY
@@ -91,7 +93,7 @@ export async function readRegistry(path) {
   try {
     text = await readFile(path, 'utf8')
   } catch (error) {
-    if (error && error.code === 'ENOENT') return { competitors: [] }
+    if (error && error.code === 'ENOENT') return { competitors: [], observations: [], mappings: [] }
     throw new Error(`competitor registry ${path} cannot be read: ${error.message}`)
   }
   let document
@@ -103,7 +105,16 @@ export async function readRegistry(path) {
   if (!document || !Array.isArray(document.competitors)) {
     throw new Error(`competitor registry ${path} must hold {"competitors": [...]}`)
   }
-  return { competitors: document.competitors.map(normalizeCompetitor) }
+  for (const name of ['observations', 'mappings']) {
+    if (document[name] !== undefined && !Array.isArray(document[name])) {
+      throw new Error(`competitor registry ${path}: ${name} must be a list, found ${JSON.stringify(document[name])}`)
+    }
+  }
+  return {
+    competitors: document.competitors.map(normalizeCompetitor),
+    observations: document.observations || [],
+    mappings: document.mappings || [],
+  }
 }
 
 async function writeRegistry(path, registry) {
@@ -193,11 +204,43 @@ export async function editCompetitor(path, id, changes) {
   })
 }
 
+// Many edits in one locked write, or none: each record names the id it
+// changes. An id the registry does not hold, or one named twice, is refused
+// with every such id and the registry stays as it was.
+export async function editCompetitors(path, inputs) {
+  return mutateRegistry(path, (registry) => {
+    const seen = new Set()
+    const unknown = []
+    const twice = []
+    for (const input of inputs) {
+      const id = slugify(input && input.id)
+      if (!registry.competitors.some((competitor) => competitor.id === id)) unknown.push(id || 'a record naming no id')
+      if (seen.has(id)) twice.push(id)
+      seen.add(id)
+    }
+    if (unknown.length || twice.length) {
+      throw new Error(`edit refused, nothing was changed: ${[...unknown.map((id) => `${id} is not in ${path}`), ...twice.map((id) => `${id} is named twice`)].join('; ')}`)
+    }
+    return inputs.map((input) => {
+      const index = find(registry, input.id, path)
+      const changed = normalizeCompetitor({ ...registry.competitors[index], ...input, id: registry.competitors[index].id })
+      registry.competitors[index] = changed
+      return changed
+    })
+  })
+}
+
+// Removing a competitor removes its observations and its mapping with it:
+// neither means anything without the competitor it is about.
 export async function removeCompetitor(path, id) {
   return mutateRegistry(path, (registry) => {
     const index = find(registry, id, path)
     const removed = registry.competitors[index]
     registry.competitors = registry.competitors.filter((_, at) => at !== index)
-    return removed
+    const observations = registry.observations.filter((observation) => observation.competitor === removed.id).length
+    registry.observations = registry.observations.filter((observation) => observation.competitor !== removed.id)
+    const mapping = registry.mappings.some((held) => held.competitor === removed.id)
+    registry.mappings = registry.mappings.filter((held) => held.competitor !== removed.id)
+    return { competitor: removed, observations, mapping }
   })
 }

@@ -14,6 +14,10 @@ function featureMap(product) {
   return new Map(Object.entries(product.features).map(([key, value]) => [slug(key), value]).filter(([key]) => key))
 }
 
+// What a cell says when a record does not state the feature or price at all:
+// nothing was observed, which is not the same as a stated No.
+const UNSTATED = 'unknown'
+
 function displayValue(value) {
   if (value === true) return 'Yes'
   if (value === false || value == null || value === '') return 'No'
@@ -45,13 +49,16 @@ export function compareProducts(product, competitors = []) {
     competitors: products.slice(1),
     featureRows: featureKeys.map((feature) => ({
       key: feature,
-      values: Object.fromEntries(products.map((entry) => [entry.id, displayValue(entry.features.get(feature))])),
+      values: Object.fromEntries(products.map((entry) => [
+        entry.id,
+        entry.features.has(feature) ? displayValue(entry.features.get(feature)) : UNSTATED,
+      ])),
     })),
     pricingRows: pricingKeys.map((price) => ({
       key: price,
       values: Object.fromEntries(products.map((entry) => {
         const match = Object.entries(entry.pricing).find(([key]) => slug(key) === price)
-        return [entry.id, displayValue(match?.[1])]
+        return [entry.id, match ? displayValue(match[1]) : UNSTATED]
       })),
     })),
   }

@@ -43,8 +43,9 @@ It provides a portable command line and JavaScript API. Search, browser capture,
 
 Requires Node.js 20 or newer. Registry mutations also use the `fs-ext` native
 advisory-lock binding; installation requires the platform's Node native-addon
-toolchain. A missing or unsupported binding is a named refusal, not unlocked
-execution.
+toolchain, and `package.json` approves the binding's install script
+(`allowScripts`) so an npm that runs only approved scripts still builds it. A
+missing or unsupported binding is a named refusal, not unlocked execution.
 
 ```bash
 git clone https://github.com/wisent-ai/competitors-cli.git
@@ -55,7 +56,7 @@ node src/cli.js registry add --competitor alternative.json
 node src/cli.js registry list
 ```
 
-`alternative.json` is one competitor record, `{"name": "Alternative", "domains": ["alternative.example"]}`. The registry file starts empty and changes only through `registry add`, `registry import --competitors <competitors.json>`, `registry edit <id> --competitor <changes.json>` and `registry remove <id>`; `registry show <id>` reads one record. A missing registry name is refused with `no competitor registry is named: pass --registry <file> or set COMPETITORS_REGISTRY`, an unknown id names the ids the file holds, and adding an id twice is refused.
+`alternative.json` is one competitor record, `{"name": "Alternative", "domains": ["alternative.example"]}`. The registry file starts empty and changes only through the CLI's verbs: `registry add`, `registry import --competitors <competitors.json>`, `registry edit <id> --competitor <changes.json>`, `registry edit --competitors <changes.json>` (many records, each naming its `id`, in one locked write or none: an id the file does not hold or names twice is refused with `edit refused, nothing was changed: ...`) and `registry remove <id>`; `registry show <id>` reads one record. Removing a competitor removes its observations and its mapping; the answer counts them (`observationsRemoved`, `mappingRemoved`). A missing registry name is refused with `no competitor registry is named: pass --registry <file> or set COMPETITORS_REGISTRY`, an unknown id names the ids the file holds, and adding an id twice is refused.
 
 `registry import` takes an array or `{"competitors": [...]}` and adds every record in one locked write, or none: when the file names an id twice or an id the registry already holds, it exits 1 with `import refused, nothing was added: <ids> already in <registry> or named twice in the file; change held ones with competitors registry edit`, and the registry is unchanged. Its answer is `{"registry", "added": [...]}`.
 
@@ -105,7 +106,7 @@ node src/cli.js compare --product ours.json --competitors competitors.json --for
 node src/cli.js compare --product ours.json --registry "$COMPETITORS_REGISTRY" --format markdown
 ```
 
-`compare` takes exactly one of the two, and refuses an empty registry. `discover --registry <file>` deduplicates against the registered competitors; without it nothing is assumed to be known.
+`compare` takes exactly one of the two, and refuses an empty registry. A feature or price a record does not state is `unknown` in the matrix, never `No`: only a stated `false` or empty value is `No`. `discover --registry <file>` deduplicates against the registered competitors; without it nothing is assumed to be known.
 
 `discover` keeps a stated zero: a record whose ad, install or review count is
 zero has that count, not an unknown one. A record naming no `sourceType` is
@@ -115,8 +116,90 @@ internal research.
 
 Unknown flags, missing option values (including another flag in place of the
 value), and duplicate singleton options are usage errors with exit status 2.
-`--own-domain`, `--tag` and `--region` may repeat. `--help` and `-h`
-work at every command depth.
+`--own-domain`, `--tag`, `--region`, `--competitor-id` and `--evidence` may
+repeat. `--help` and `-h` work at every command depth.
+
+## Tracking companies over time
+
+The registry also keeps each competitor's time series (`observations`) and how
+it meets our own products (`mappings`). Together they answer which fast-growing
+company we could do better than, and keep answering as the figures change.
+
+```bash
+stado product catalog --json > products.json
+node src/cli.js observation import --table list.tsv
+node src/cli.js registry edit --competitors signals.json
+node src/cli.js observation measure
+node src/cli.js mapping import --mappings mappings.json --catalog products.json
+node src/cli.js opportunity list --limit 10
+node src/cli.js proposal write --out proposals --limit 10 --owner example-org --family wisent --evidence "the request it answers" --catalog products.json
+node src/cli.js board show --format markdown
+node src/cli.js board serve --catalog products.json
+```
+
+**Lists.** `observation import --table <list.tsv>` reads a published list of
+companies pasted from a spreadsheet: tab-separated, the first line naming the
+columns. The columns are `Rank`, `Company`, `Description`, `Location`, `Founded`,
+`Snapshot Time`, `Source`, `Annual Revenue`, `# of Employees`,
+`Revenue/Employee`, `Profitable?`, `Total Funding`, `Valuation` and
+`Valuation/Employee`; `Company`, `Snapshot Time` (a month, `Apr 2026` or
+`2026-04`) and `Source` are required. Each company the registry does not hold
+is added (tagged `tracked`); each stated figure becomes one observation dated
+at the snapshot month, with the source as its evidence. Amounts read `$1,800,000`,
+`1.8M` or `≥$10,000,000` (kept as a lower bound); `Profitable?` reads `Yes` or
+`No`; an empty cell states nothing. Importing the same list again records
+nothing new (`known` counts it); a later list adds readings to the same series.
+A column it does not know is refused with the column and the known columns; a
+cell that does not read is refused with its line, company and column, and
+nothing is written.
+
+**Measurement.** `observation measure [--competitor-id <id>]...` reads every
+active competitor, or the named ones, from what its record declares: each
+domain's home page (title, description and a digest of the two, so a change of
+positioning is a new reading; a site whose robots.txt disallows `/` is not
+read), the Hacker News stories that contain its `mentionQuery` as a phrase, and
+the GitHub stars of each repository in `repositories`. Readings are recorded
+once per day and value. A signal that cannot be read is listed in `failures`
+with its cause, every other reading is still recorded, and the command exits 1;
+`withoutSignals` names competitors that declare nothing to read. Run it on a
+schedule (`stado schedule create --cron ...`) to keep the series growing.
+`observation list [--competitor-id <id>] [--metric <key>]`, `show <id>`,
+`add --observation <file>` (refused when the id is held) and `remove <id>`
+read and change single readings.
+
+**Mappings.** `mapping set <id> --mapping <mapping.json> --catalog <products.json>`
+and `mapping import --mappings <mappings.json> --catalog <products.json>` (a
+list, each naming its `competitor`, all or none) say how a competitor meets our
+products: `ours` (catalog ids), `relation` (`competes`, `adjacent` or `none`),
+`need`, `missing`, `better` (each an `advantage` of `own-solution`, `privacy`,
+`cost`, `fleet` or `ecosystem` with its `reason`), `purpose` (`commercial`,
+`public-good` or `both`), `uses` (catalog ids) and `mappedBy`. A gap we would
+pursue (no `ours`, some `better`) also states `offer` (at most 350 bytes),
+`slice` and `surfaces`. A product id the catalog does not hold is refused with
+the count it holds; `mapping list`, `show <id>` and `remove <id>` complete it.
+
+**Opportunities.** `opportunity list [--limit <n>]` ranks every active
+competitor by revenue per employee × revenue growth between its first and latest
+reading (1 with one reading) × the number of advantages its mapping names. Each
+answer carries every factor and its reasons in words; `kind` is `new-product`
+(nothing of ours meets it), `improve` (ours lacks what `missing` names),
+`covered`, `not-pursued` (a gap with no advantage) or `unmapped`.
+
+**Proposals.** `proposal write --out <dir> --limit <n> --owner <org> --family
+wisent|standalone --evidence <ref>... --catalog <products.json>` writes, for each
+of the strongest gaps, `<dir>/answer-<competitor>/plan.md` and
+`create-request.json`, the request `stado product create --plan` checks.
+Competitors whose mappings name the same `offer` are one proposal. It creates
+no repository and no product; `answer-<competitor>` is a working id until the
+product is named. With `--oko-root <defect> --oko-product <product>` each
+proposal is also recorded with `oko defects record` under that open defect; a
+missing `oko` program is refused by name.
+
+**Board.** `board show [--format json|text|markdown|html]` prints every tracked
+company beside our products in opportunity order. `board serve --catalog
+<products.json> [--port <n>]` serves the same board on 127.0.0.1 with a form for
+every operation above (its API is under `/v1`); `--port 0`, the default, lets
+the system choose the port, and the answer prints the address.
 
 ## Primary interfaces
 
@@ -125,6 +208,12 @@ work at every command depth.
 | `competitors registry list\|show\|add\|import\|edit\|remove` | the registry file the CLI owns; `list` filters by tag, region, category and state |
 | `competitors discover` | normalize and deduplicate caller-supplied discovery records |
 | `competitors compare` | generate a feature and pricing matrix from explicit product records |
+| `competitors observation list\|show\|add\|import\|remove\|measure` | each competitor's dated time series: published lists and public signals |
+| `competitors mapping list\|show\|set\|import\|remove` | how each competitor meets our products, checked against the product catalog |
+| `competitors opportunity list` | the competitors ranked as opportunities, every factor and reason given |
+| `competitors proposal write` | product plans and creation requests for the strongest gaps, optionally recorded in Oko |
+| `competitors board show\|serve` | every tracked company beside our products, printed or served with every operation |
+| `@wisent-ai/competitors-cli/watch` | list import, measurement, mapping, opportunity, proposal and board APIs |
 | `@wisent-ai/competitors-cli` | identities, observations, discovery, context, and comparison APIs |
 | `@wisent-ai/competitors-cli/context` | evidence capture orchestration and deep analysis |
 | `@wisent-ai/competitors-cli/crawl` | model-native search expansion with injected I/O; the injected `chat(messages, { purpose, responseFormat })` is asked for a strict `json_schema` object at every step (`competitor_queries`, `competitor_entities`, `competitor_decision`). A reply that is not that object is an error naming the step and the reply, never an empty or `ambiguous` answer: `discoverCompetitors` records it in `sourceErrors` for extract, classify and expand and throws it from the seed step, and `classifyDiscoveredCandidates` throws it. Missing inputs throw before anything is searched or asked: `brand is required`, `product, market, or marketDefinition is required`, `discoverCompetitors requires a search(query) function`, `discoverCompetitors requires an integer maxRounds option`, and for a missing `chat`, from `discoverCompetitors` or `createCompetitorModel` alike, `createCompetitorModel requires a chat(messages, { purpose, responseFormat }) function` |
@@ -283,7 +372,7 @@ one is refused by name.
 
 - **Input:** explicit JSON records or injected search, capture, and model functions.
 - **Output:** JSON, Markdown, normalized observations, and evidence references.
-- **State:** none by default; the caller chooses where dated reports and artifacts are retained.
+- **State:** the registry file the caller names (competitors, their observations and mappings); the caller chooses where dated reports, proposals and artifacts are retained.
 - **Credentials:** owned by the calling application and never accepted as CLI flags.
 - **Cost:** local comparison is unmetered; external search, capture, and inference costs belong to configured providers.
 

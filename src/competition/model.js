@@ -34,6 +34,10 @@ export const COMPETITOR_SIGNAL_TYPES = {
   RELEASE: 'release',
   SAFETY: 'safety',
   RETENTION: 'retention',
+  // Revenue, funding, valuation and profitability a source states.
+  FINANCIAL: 'financial',
+  // Headcount a source states.
+  TEAM: 'team',
 };
 
 export const COMPETITOR_SOURCE_TYPES = {
@@ -59,6 +63,10 @@ export const COMPETITOR_SOURCE_TYPES = {
   INTERNAL_RESEARCH: 'internal_research',
   USER_REPORT: 'user_report',
   MANUAL_REVIEW: 'manual_review',
+  // A published ranking or list of companies (a row of its table).
+  PUBLISHED_LIST: 'published_list',
+  HACKER_NEWS: 'hacker_news',
+  GITHUB: 'github',
 };
 
 export const COMPETITOR_PRODUCT_CATEGORIES = {
@@ -109,6 +117,8 @@ export function cleanObject(value) {
 }
 
 export function numberOrNull(value) {
+  // Nothing stated is null, never a zero: Number(null) and Number('') are 0.
+  if (value === null || value === undefined || value === '') return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 }
@@ -164,15 +174,27 @@ export function normalizeCompetitor(input = {}) {
   const playStoreSource = input.playStorePackages || input.playStorePackage
     ? (Array.isArray(input.playStorePackages) ? input.playStorePackages : [input.playStorePackage])
     : [];
+  const repositories = cleanStringArray(input.repositories);
+  const malformed = repositories.find((repository) => !/^[\w.-]+\/[\w.-]+$/u.test(repository));
+  if (malformed) {
+    throw new Error(`competitor ${id}: repository ${malformed} is not OWNER/NAME of a public GitHub repository`);
+  }
 
   return {
     id,
     name,
     company: cleanNullable(input.company),
     productCategory: clean(input.productCategory || input.category || COMPETITOR_PRODUCT_CATEGORIES.AI_COMPANION),
+    description: cleanNullable(input.description),
+    location: cleanNullable(input.location),
+    founded: numberOrNull(input.founded),
     domains: cleanStringArray(domainSource),
     appStoreIds: cleanStringArray(appStoreSource),
     playStorePackages: cleanStringArray(playStoreSource),
+    // What the public signals read: the GitHub repositories whose stars are
+    // counted, and the words Hacker News is searched for.
+    repositories,
+    mentionQuery: cleanNullable(input.mentionQuery),
     regions: cleanStringArray(input.regions || ['global']),
     tags: cleanStringArray(input.tags || []),
     priority: numberOrNull(input.priority),

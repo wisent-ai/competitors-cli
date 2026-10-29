@@ -1,0 +1,8 @@
+export { parseListTable, LIST_COLUMNS } from './table.js'
+export { importList, addObservation, removeObservation, showObservation, recordObservations, selectObservations } from './observations.js'
+export { measureCompetitors } from './signals.js'
+export { ADVANTAGES, PURPOSES, RELATIONS, SURFACES, importMappings, normalizeMapping, readCatalog, removeMapping, setMapping, showMapping } from './mapping.js'
+export { assessOpportunity, rankOpportunities } from './opportunity.js'
+export { writeProposals } from './proposal.js'
+export { BOARD_COLUMNS, boardApp, boardHtml, boardMarkdown, boardRows } from './board.js'
+export { serveBoard } from './serve.js'

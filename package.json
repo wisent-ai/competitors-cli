@@ -25,7 +25,8 @@
       "types": "./src/types/crawl.d.ts",
       "default": "./src/crawl.js"
     },
-    "./comparison": "./src/comparison.js"
+    "./comparison": "./src/comparison.js",
+    "./watch": "./src/watch/index.js"
   },
   "scripts": {
     "test": "node tests/context/run.mjs",
@@ -38,5 +39,8 @@
   },
   "dependencies": {
     "fs-ext": "2.1.1"
+  },
+  "allowScripts": {
+    "fs-ext@2.1.1": true
   }
 }
