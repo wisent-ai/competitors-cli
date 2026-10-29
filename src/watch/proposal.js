@@ -24,11 +24,15 @@ function identity(competitor) {
   return `answer-${competitor.replaceAll('_', '-')}`
 }
 
-/** One repository per surface; a service is served by the cli's repository when both are named. */
+/**
+ * One repository per surface, in the order the keys above list them, so the
+ * product's owning repository (the first one) is its core, not a client; a
+ * service is served by the cli's repository when both are named.
+ */
 function repositories(id, owner, surfaces) {
   const rows = []
   const names = new Set()
-  for (const surface of surfaces) {
+  for (const surface of Object.keys(REPOSITORY_SUFFIX).filter((kind) => surfaces.includes(kind))) {
     const repository = `${owner}/${id}${REPOSITORY_SUFFIX[surface]}`
     if (names.has(repository)) continue
     names.add(repository)
@@ -154,6 +158,7 @@ async function recordInOko({ oko, id, members, planPath, requestPath }) {
     '--impact', `A gap no product of ours meets, opportunity score ${Math.round(lead.opportunity.score)}: ${lead.mapping.need}`,
     '--found-in', 'competitors proposal write',
     '--repair', `The operator names it; then stado product create --plan ${requestPath} and stado product create --request ${requestPath} --allow-create`,
+    '--criterion', `stado product catalog lists the product created from ${requestPath} under the name the operator gave it, or the operator declined the proposal and this record is withdrawn with his words`,
     '--root', oko.root,
     '--json',
   ]
