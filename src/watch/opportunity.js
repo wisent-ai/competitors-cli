@@ -1,4 +1,4 @@
-import { selectObservations } from './observations.js'
+import { comparableFigures, selectObservations, signalSeries } from './observations.js'
 
 // How strong an opportunity a tracked competitor is for us, from its
 // observations and its mapping. The score multiplies three things the
@@ -34,12 +34,17 @@ function source(observation) {
   return observation.attributes?.source || observation.evidenceUrl || observation.sourceType
 }
 
-/** The change of one counted signal between its first and latest reading, or null. */
+/**
+ * The change of one counted signal between its first and latest figure that
+ * sum the same sources, or null: stars of a repository added later are not
+ * growth.
+ */
 function movement(observations, key) {
-  const first = earliest(observations, key)
-  const last = latest(observations, key)
-  if (!first || !last || first === last) return null
-  return { from: first.metric.value, to: last.metric.value, since: first.observedAt.slice(0, 10), at: last.observedAt.slice(0, 10) }
+  const figures = comparableFigures(signalSeries(observations, key))
+  if (figures.length < 2) return null
+  const [first] = figures
+  const last = figures[figures.length - 1]
+  return { from: first.value, to: last.value, since: first.at, at: last.at }
 }
 
 /** One competitor's opportunity: the score, each factor and the reasons in words. */

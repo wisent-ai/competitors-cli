@@ -107,3 +107,35 @@ export function selectObservations(observations, { competitor = null, metric = n
     .filter((observation) => metric === null || observation.metric?.key === metric)
     .sort((left, right) => left.observedAt.localeCompare(right.observedAt) || left.recordedAt.localeCompare(right.recordedAt))
 }
+
+/**
+ * A counted public signal of one competitor (`github_stars`, `hn_stories`) as
+ * one figure per day, oldest first. A competitor can be read from several
+ * sources on a day (each of its GitHub repositories), each reading counting
+ * one source: the day's figure is the sum of each source's last reading that
+ * day, and `sources` names what was summed. Figures summing different sources
+ * (a repository added, a mention query changed, a read that failed) are not
+ * one series: `comparableFigures` keeps those a change can be read between.
+ */
+export function signalSeries(observations, key) {
+  const days = new Map()
+  for (const observation of observations) {
+    if (observation.metric?.key !== key || observation.metric.value === null) continue
+    const at = observation.observedAt.slice(0, 10)
+    if (!days.has(at)) days.set(at, new Map())
+    days.get(at).set(observation.attributes?.repository ?? observation.attributes?.query ?? '', observation.metric.value)
+  }
+  return [...days].map(([at, read]) => ({
+    at,
+    value: [...read.values()].reduce((sum, value) => sum + value, 0),
+    sources: [...read.keys()].sort(),
+  }))
+}
+
+/** The figures of `series` that sum the same sources as its latest one, oldest first. */
+export function comparableFigures(series) {
+  const latest = series[series.length - 1]
+  if (!latest) return []
+  const sources = latest.sources.join('\n')
+  return series.filter((figure) => figure.sources.join('\n') === sources)
+}

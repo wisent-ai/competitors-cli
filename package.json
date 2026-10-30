@@ -32,7 +32,8 @@
     "test": "node tests/context/run.mjs",
     "test:registry": "sh tests/registry/registry.sh",
     "test:registry:import": "sh tests/registry/import.sh",
-    "test:registry:concurrency": "node tests/registry/concurrency.mjs"
+    "test:registry:concurrency": "node tests/registry/concurrency.mjs",
+    "test:watch": "node --test tests/watch/signals.test.mjs"
   },
   "engines": {
     "node": ">=20"

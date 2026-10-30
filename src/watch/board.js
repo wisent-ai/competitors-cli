@@ -1,4 +1,4 @@
-import { selectObservations } from './observations.js'
+import { comparableFigures, selectObservations, signalSeries } from './observations.js'
 import { rankOpportunities } from './opportunity.js'
 
 // The board: every tracked competitor beside our products, one row each in
@@ -19,6 +19,23 @@ function reading(own, key) {
     at: latest.attributes?.snapshot || latest.observedAt.slice(0, 10),
     previous: series.length > 1 ? series[series.length - 2].metric.value : null,
     readings: series.length,
+  }
+}
+
+/**
+ * A counted public signal as the board shows it: the latest day's figure,
+ * the one before it that sums the same sources, and how many such days.
+ */
+function counted(own, key) {
+  const figures = comparableFigures(signalSeries(own, key))
+  const latest = last(figures)
+  if (!latest) return null
+  return {
+    value: latest.value,
+    at: latest.at,
+    previous: figures.length > 1 ? figures[figures.length - 2].value : null,
+    readings: figures.length,
+    sources: latest.sources,
   }
 }
 
@@ -49,8 +66,8 @@ export function boardRows(registry) {
       revenuePerEmployee: opportunity.revenuePerEmployee,
       growth: opportunity.growth,
       profitable: reading(own, 'profitable'),
-      hackerNewsStories: reading(own, 'hn_stories'),
-      githubStars: reading(own, 'github_stars'),
+      hackerNewsStories: counted(own, 'hn_stories'),
+      githubStars: counted(own, 'github_stars'),
       website: positioning(own),
       lastMeasuredAt: measured.length ? measured.map((observation) => observation.recordedAt).sort().pop() : null,
       ours: mapping ? mapping.ours : [],

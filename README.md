@@ -165,7 +165,10 @@ with its cause, every other reading is still recorded, and the command exits 1;
 schedule (`stado schedule create --cron ...`) to keep the series growing.
 `observation list [--competitor-id <id>] [--metric <key>]`, `show <id>`,
 `add --observation <file>` (refused when the id is held) and `remove <id>`
-read and change single readings.
+read and change single readings. The board and the opportunity reasons read
+a counted signal as one figure per day, the sum of that day's readings (the
+stars of every repository read that day), and state its change only between
+days that sum the same sources: a repository first read later is not growth.
 
 **Mappings.** `mapping set <id> --mapping <mapping.json> --catalog <products.json>`
 and `mapping import --mappings <mappings.json> --catalog <products.json>` (a
